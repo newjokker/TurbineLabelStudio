@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标签查看 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <strong>标签查看</strong>
+          <p class="muted" id="permissionText"></p>
+        </div>
+        <span class="status" id="status">加载中...</span>
+      </div>
+    </section>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>标签</th>
+            <th>描述和标注方法</th>
+            <th>更新人</th>
+            <th>更新时间</th>
+            <th>extra_info</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    renderHeader('label_view');
+    renderPermissionText(document.getElementById('permissionText'));
+
+    async function loadLabels() {
+      const status = document.getElementById('status');
+      try {
+        const data = await apiFetch('/api/labels');
+        const labels = data.items;
+        document.getElementById('rows').innerHTML = labels.map(item => {
+          const color = item.extra_info?.color || '#94a3b8';
+          return `
+            <tr>
+              <td>${item.id}</td>
+              <td><span class="swatch" style="--chip:${escapeHtml(color)}"></span>${escapeHtml(item.label)}</td>
+              <td>${escapeHtml(item.des || '')}</td>
+              <td>${escapeHtml(item.update_by || '')}</td>
+              <td>${escapeHtml(item.update_time || '')}</td>
+              <td><code>${escapeHtml(JSON.stringify(item.extra_info || {}))}</code></td>
+            </tr>
+          `;
+        }).join('') || '<tr><td colspan="6" class="status">暂无标签</td></tr>';
+        status.className = 'status ok';
+        status.textContent = `已加载 ${labels.length} 个标签`;
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    }
+
+    loadLabels();
+  </script>
+</body>
+</html>

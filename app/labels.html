@@ -20,7 +20,7 @@
       <form class="form-grid" id="labelForm">
         <input type="hidden" id="labelId">
         <label>标签 <input id="labelName" required></label>
-        <label>更新人 <input id="updateBy"></label>
+        <label>更新人 <input id="updateBy" readonly></label>
         <label>颜色 <input id="color" type="color" value="#0f5f8a"></label>
         <button type="submit" id="saveBtn">保存</button>
         <label class="wide">描述和标注方法 <textarea id="des"></textarea></label>
@@ -53,7 +53,26 @@
       document.getElementById('updateBy').value = user.name;
       document.getElementById('color').value = '#0f5f8a';
       document.getElementById('des').value = '';
-      document.getElementById('extraInfo').value = '';
+      document.getElementById('extraInfo').value = JSON.stringify({ color: '#0f5f8a' }, null, 2);
+    }
+
+    function syncColorToExtraInfo() {
+      const color = document.getElementById('color').value;
+      const extraInput = document.getElementById('extraInfo');
+      let extra = {};
+      if (extraInput.value.trim()) {
+        try {
+          extra = JSON.parse(extraInput.value);
+        } catch (error) {
+          document.getElementById('status').className = 'status bad';
+          document.getElementById('status').textContent = 'extra_info 不是合法 JSON，颜色未同步';
+          return;
+        }
+      }
+      extra.color = color;
+      extraInput.value = JSON.stringify(extra, null, 2);
+      document.getElementById('status').className = 'status';
+      document.getElementById('status').textContent = '颜色已同步到 extra_info.color';
     }
 
     function renderRows() {
@@ -100,11 +119,11 @@
       if (text) {
         try { extra = JSON.parse(text); } catch (error) { status.textContent = 'extra_info 不是合法 JSON'; return; }
       }
-      if (!extra.color) extra.color = document.getElementById('color').value;
+      extra.color = document.getElementById('color').value;
       const payload = {
         label: document.getElementById('labelName').value.trim(),
         des: document.getElementById('des').value.trim(),
-        update_by: document.getElementById('updateBy').value.trim(),
+        update_by: user.name,
         extra_info: extra
       };
       const id = document.getElementById('labelId').value;
@@ -128,10 +147,12 @@
         const item = labels.find(row => row.id === editId);
         document.getElementById('labelId').value = item.id;
         document.getElementById('labelName').value = item.label;
-        document.getElementById('updateBy').value = item.update_by || user.name;
+        document.getElementById('updateBy').value = user.name;
         document.getElementById('color').value = item.extra_info?.color || '#0f5f8a';
         document.getElementById('des').value = item.des || '';
-        document.getElementById('extraInfo').value = JSON.stringify(item.extra_info || {}, null, 2);
+        const extra = { ...(item.extra_info || {}) };
+        extra.color = document.getElementById('color').value;
+        document.getElementById('extraInfo').value = JSON.stringify(extra, null, 2);
       }
       if (deleteId && confirm('确认删除这个标签？')) {
         try {
@@ -152,6 +173,8 @@
       link.click();
       URL.revokeObjectURL(link.href);
     });
+
+    document.getElementById('color').addEventListener('input', syncColorToExtraInfo);
 
     resetForm();
     loadLabels();

@@ -152,6 +152,11 @@ def labels_page():
     return _page("labels.html")
 
 
+@app.get("/label_view.html")
+def label_view_page():
+    return _page("label_view.html")
+
+
 @app.get("/accounts.html")
 def accounts_page():
     return _page("accounts.html")
@@ -215,7 +220,7 @@ def create_label(payload: LabelPayload, x_user_id: Optional[str] = Header(None, 
         record = Label(
             label=payload.label,
             des=payload.des,
-            update_by=payload.update_by or actor.name,
+            update_by=actor.name,
             extra_info=json_text(payload.extra_info),
         )
         session.add(record)
@@ -246,7 +251,7 @@ def update_label(label_id: int, payload: LabelPayload, x_user_id: Optional[str] 
         before = record.to_dict()
         record.label = payload.label
         record.des = payload.des
-        record.update_by = payload.update_by or actor.name
+        record.update_by = actor.name
         record.extra_info = json_text(payload.extra_info)
         record.update_time = beijing_now()
         session.flush()
