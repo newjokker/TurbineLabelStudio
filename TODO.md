@@ -2,6 +2,7 @@
 
 ### 使用场景
 
+* 设计登录系统，只有有权限的人才能查看和修改
 * 查看标注
 * 标注
 * 关联原始 wav 与 uc
@@ -17,4 +18,14 @@
 
 * uc, x1, y1, x2, y2, label, update_time, update_ID, update_reason 不能为空
 
-* 
+#### 人员登录表
+
+* name(string), password(string), alias(string), end_time(UTC), role(string, enum)
+
+* end_time 是停用的时间
+
+* role 是角色
+    * 观察者:只能查看不能修改导出
+    * 编辑者:可以查看修改导出
+    * 管理员:可以修改别的角色的权限，拥有别的角色的所有权限
+
