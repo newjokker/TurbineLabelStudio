@@ -7,6 +7,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from dao.database import Base, Session, beijing_now, format_beijing_time, json_text, json_value
 
+# 注册外键引用表到同一个 Base.metadata，避免单独导入本 DAO 时外键解析失败。
+from dao import user_account  # noqa: F401
+
 
 class OperationLog(Base):
     """日志表：记录单个动作对数据表的修改。"""
