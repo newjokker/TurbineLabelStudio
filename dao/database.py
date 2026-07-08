@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -46,10 +47,19 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
-def utcnow():
-    return datetime.utcnow()
+def beijing_now():
+    return datetime.now(BEIJING_TZ).replace(tzinfo=None)
+
+
+def format_beijing_time(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def json_text(value):
@@ -80,7 +90,7 @@ def backup_database_once_per_day():
     if not os.path.exists(LOCAL_LABEL_STUDIO_DB):
         return None
 
-    today = datetime.now().strftime("%Y%m%d")
+    today = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
     backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, f"label_studio_{today}.db")
     if os.path.exists(backup_path):
         return backup_path

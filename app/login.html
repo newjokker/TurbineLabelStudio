@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <section class="login-panel">
+      <div>
+        <h1>TurbineLabelStudio</h1>
+        <p class="muted">使用账号登录后，根据角色进入对应管理界面。</p>
+      </div>
+      <form class="login-form" id="loginForm">
+        <label>账号 <input id="name" autocomplete="username" value="admin"></label>
+        <label>密码 <input id="password" type="password" autocomplete="current-password" value="admin123"></label>
+        <button type="submit">登录</button>
+      </form>
+      <div class="demo-row">
+        <button class="secondary" type="button" data-name="admin" data-password="admin123">管理员</button>
+        <button class="secondary" type="button" data-name="editor_01" data-password="editor123">编辑者</button>
+        <button class="secondary" type="button" data-name="viewer_01" data-password="viewer123">观察者</button>
+      </div>
+      <div class="status" id="status">时间和操作记录均使用北京时间。</div>
+    </section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script>
+    document.querySelectorAll('[data-name]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.getElementById('name').value = button.dataset.name;
+        document.getElementById('password').value = button.dataset.password;
+      });
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const status = document.getElementById('status');
+      status.className = 'status';
+      status.textContent = '登录中...';
+      try {
+        const data = await apiFetch('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: document.getElementById('name').value.trim(),
+            password: document.getElementById('password').value
+          })
+        });
+        setUser(data.user, data.permissions);
+        location.href = '/index.html';
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -12,13 +12,15 @@ RUN sed -i '69s/.*/bind 127.0.0.1/' /etc/redis/redis.conf
 
 RUN pip install -i https://mirrors.aliyun.com/pypi/simple \
     sqlalchemy \
+    fastapi \
+    uvicorn \
     requests \
     fabric
 
 COPY ./ /usr/src/app
 
 RUN mkdir -p /usr/src/app/logs
-RUN chmod +x /usr/src/app/start_server.sh /usr/src/app/stop_server.sh
+RUN chmod +x /usr/src/app/start_server.sh
 
 RUN echo "alias ll='ls -l'" > ~/.bash_aliases
 

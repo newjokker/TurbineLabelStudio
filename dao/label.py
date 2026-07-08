@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.exc import SQLAlchemyError
 
-from dao.database import Base, Session, json_text, json_value, utcnow
+from dao.database import Base, Session, beijing_now, format_beijing_time, json_text, json_value
 
 
 class Label(Base):
@@ -15,7 +15,7 @@ class Label(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, nullable=False)
     label = Column(String(255), nullable=False, unique=True)
-    update_time = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    update_time = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
     des = Column(Text, nullable=True)
     update_by = Column(String(255), nullable=True)
     extra_info = Column(Text, nullable=False, default="{}")
@@ -28,7 +28,7 @@ class Label(Base):
         return {
             "id": self.id,
             "label": self.label,
-            "update_time": self.update_time,
+            "update_time": format_beijing_time(self.update_time),
             "des": self.des,
             "update_by": self.update_by,
             "extra_info": json_value(self.extra_info),

@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
 
-from dao.database import Base, Session
+from dao.database import Base, Session, format_beijing_time
 
 
 class UserAccount(Base):
@@ -34,7 +34,7 @@ class UserAccount(Base):
             "name": self.name,
             "password": self.password,
             "alias": self.alias,
-            "end_time": self.end_time,
+            "end_time": format_beijing_time(self.end_time),
             "role": self.role,
         }
 

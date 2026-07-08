@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.exc import SQLAlchemyError
 
-from dao.database import Base, Session, json_text, json_value, utcnow
+from dao.database import Base, Session, beijing_now, format_beijing_time, json_text, json_value
 
 
 class Annotation(Base):
@@ -23,7 +23,7 @@ class Annotation(Base):
     y2 = Column(Float, nullable=False)
     label_id = Column(Integer, ForeignKey("label.id"), nullable=False)
     difficult = Column(Boolean, nullable=False, default=False)
-    update_time = Column(DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+    update_time = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
     update_id = Column(Integer, ForeignKey("user_account.id"), nullable=False)
     update_reason = Column(String(500), nullable=False)
     extra_info = Column(Text, nullable=False, default="{}")
@@ -47,7 +47,7 @@ class Annotation(Base):
             "y2": self.y2,
             "label_id": self.label_id,
             "difficult": self.difficult,
-            "update_time": self.update_time,
+            "update_time": format_beijing_time(self.update_time),
             "update_id": self.update_id,
             "update_reason": self.update_reason,
             "extra_info": json_value(self.extra_info),

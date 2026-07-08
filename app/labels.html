@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标签管理 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <strong>标签管理</strong>
+          <p class="muted" id="permissionText"></p>
+        </div>
+        <button id="exportBtn" type="button">导出标签 JSON</button>
+      </div>
+      <form class="form-grid" id="labelForm">
+        <input type="hidden" id="labelId">
+        <label>标签 <input id="labelName" required></label>
+        <label>更新人 <input id="updateBy"></label>
+        <label>颜色 <input id="color" type="color" value="#0f5f8a"></label>
+        <button type="submit" id="saveBtn">保存</button>
+        <label class="wide">描述和标注方法 <textarea id="des"></textarea></label>
+        <label class="wide">extra_info JSON <textarea id="extraInfo"></textarea></label>
+      </form>
+      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
+    </section>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>标签</th><th>描述</th><th>更新人</th><th>更新时间</th><th>extra_info</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script>
+    const user = requireLogin();
+    let labels = [];
+    renderHeader('labels');
+    renderPermissionText(document.getElementById('permissionText'));
+
+    function canWrite() { return !!getPermissions().label_write; }
+    function canExport() { return !!getPermissions().label_export; }
+
+    function resetForm() {
+      document.getElementById('labelId').value = '';
+      document.getElementById('labelName').value = '';
+      document.getElementById('updateBy').value = user.name;
+      document.getElementById('color').value = '#0f5f8a';
+      document.getElementById('des').value = '';
+      document.getElementById('extraInfo').value = '';
+    }
+
+    function renderRows() {
+      document.getElementById('labelForm').classList.toggle('hidden', !canWrite());
+      document.getElementById('exportBtn').disabled = !canExport();
+      document.getElementById('rows').innerHTML = labels.map(item => {
+        const color = item.extra_info?.color || '#94a3b8';
+        return `
+          <tr>
+            <td>${item.id}</td>
+            <td><span class="swatch" style="--chip:${escapeHtml(color)}"></span>${escapeHtml(item.label)}</td>
+            <td>${escapeHtml(item.des || '')}</td>
+            <td>${escapeHtml(item.update_by || '')}</td>
+            <td>${escapeHtml(item.update_time || '')}</td>
+            <td><code>${escapeHtml(JSON.stringify(item.extra_info || {}))}</code></td>
+            <td><div class="row-actions">
+              <button class="secondary" data-edit="${item.id}" ${canWrite() ? '' : 'disabled'}>编辑</button>
+              <button class="danger" data-delete="${item.id}" ${canWrite() ? '' : 'disabled'}>删除</button>
+            </div></td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="7" class="status">暂无标签</td></tr>';
+    }
+
+    async function loadLabels() {
+      const status = document.getElementById('status');
+      try {
+        const data = await apiFetch('/api/labels');
+        labels = data.items;
+        status.className = 'status ok';
+        status.textContent = `已加载 ${labels.length} 个标签`;
+        renderRows();
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    }
+
+    document.getElementById('labelForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const status = document.getElementById('status');
+      let extra = {};
+      const text = document.getElementById('extraInfo').value.trim();
+      if (text) {
+        try { extra = JSON.parse(text); } catch (error) { status.textContent = 'extra_info 不是合法 JSON'; return; }
+      }
+      if (!extra.color) extra.color = document.getElementById('color').value;
+      const payload = {
+        label: document.getElementById('labelName').value.trim(),
+        des: document.getElementById('des').value.trim(),
+        update_by: document.getElementById('updateBy').value.trim(),
+        extra_info: extra
+      };
+      const id = document.getElementById('labelId').value;
+      try {
+        await apiFetch(id ? `/api/labels/${id}` : '/api/labels', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+        resetForm();
+        await loadLabels();
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    });
+
+    document.getElementById('rows').addEventListener('click', async event => {
+      const editId = Number(event.target.dataset.edit);
+      const deleteId = Number(event.target.dataset.delete);
+      if (editId) {
+        const item = labels.find(row => row.id === editId);
+        document.getElementById('labelId').value = item.id;
+        document.getElementById('labelName').value = item.label;
+        document.getElementById('updateBy').value = item.update_by || user.name;
+        document.getElementById('color').value = item.extra_info?.color || '#0f5f8a';
+        document.getElementById('des').value = item.des || '';
+        document.getElementById('extraInfo').value = JSON.stringify(item.extra_info || {}, null, 2);
+      }
+      if (deleteId && confirm('确认删除这个标签？')) {
+        try {
+          await apiFetch(`/api/labels/${deleteId}`, { method: 'DELETE' });
+          await loadLabels();
+        } catch (error) {
+          document.getElementById('status').className = 'status bad';
+          document.getElementById('status').textContent = error.message;
+        }
+      }
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(labels, null, 2)], { type: 'application/json;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'labels.json';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+
+    resetForm();
+    loadLabels();
+  </script>
+</body>
+</html>

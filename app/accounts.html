@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>账号管理 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <strong>账号管理</strong>
+          <p class="muted" id="permissionText"></p>
+        </div>
+      </div>
+      <form class="form-grid" id="accountForm">
+        <input type="hidden" id="accountId">
+        <label>账号 <input id="name" required></label>
+        <label>密码 <input id="password" placeholder="编辑时留空表示不修改"></label>
+        <label>昵称 <input id="alias"></label>
+        <label>角色
+          <select id="role">
+            <option value="观察者">观察者</option>
+            <option value="编辑者">编辑者</option>
+            <option value="管理员">管理员</option>
+          </select>
+        </label>
+        <label class="wide">停用时间 <input id="endTime" placeholder="YYYY-MM-DD HH:MM:SS"></label>
+        <button type="submit">保存账号</button>
+        <button class="secondary" type="button" id="resetBtn">清空</button>
+      </form>
+      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
+    </section>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>账号</th><th>昵称</th><th>角色</th><th>停用时间</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    let accounts = [];
+    renderHeader('accounts');
+    renderPermissionText(document.getElementById('permissionText'));
+
+    function canManage() { return !!getPermissions().account_manage; }
+
+    function resetForm() {
+      document.getElementById('accountId').value = '';
+      document.getElementById('name').value = '';
+      document.getElementById('password').value = '';
+      document.getElementById('alias').value = '';
+      document.getElementById('role').value = '观察者';
+      document.getElementById('endTime').value = '';
+    }
+
+    function renderRows() {
+      document.getElementById('accountForm').classList.toggle('hidden', !canManage());
+      document.getElementById('rows').innerHTML = accounts.map(item => `
+        <tr>
+          <td>${item.id}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.alias || '')}</td>
+          <td>${escapeHtml(item.role)}</td>
+          <td>${escapeHtml(item.end_time || '')}</td>
+          <td><div class="row-actions">
+            <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
+            <button class="danger" data-disable="${item.id}" ${canManage() ? '' : 'disabled'}>停用</button>
+          </div></td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" class="status">暂无账号</td></tr>';
+    }
+
+    async function loadAccounts() {
+      const status = document.getElementById('status');
+      try {
+        const data = await apiFetch('/api/accounts');
+        accounts = data.items;
+        status.className = 'status ok';
+        status.textContent = `已加载 ${accounts.length} 个账号`;
+        renderRows();
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    }
+
+    document.getElementById('accountForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const id = document.getElementById('accountId').value;
+      const payload = {
+        name: document.getElementById('name').value.trim(),
+        password: document.getElementById('password').value,
+        alias: document.getElementById('alias').value.trim(),
+        role: document.getElementById('role').value,
+        end_time: document.getElementById('endTime').value.trim()
+      };
+      try {
+        await apiFetch(id ? `/api/accounts/${id}` : '/api/accounts', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+        resetForm();
+        await loadAccounts();
+      } catch (error) {
+        document.getElementById('status').className = 'status bad';
+        document.getElementById('status').textContent = error.message;
+      }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', resetForm);
+
+    document.getElementById('rows').addEventListener('click', async event => {
+      const editId = Number(event.target.dataset.edit);
+      const disableId = Number(event.target.dataset.disable);
+      if (editId) {
+        const item = accounts.find(row => row.id === editId);
+        document.getElementById('accountId').value = item.id;
+        document.getElementById('name').value = item.name;
+        document.getElementById('password').value = '';
+        document.getElementById('alias').value = item.alias || '';
+        document.getElementById('role').value = item.role;
+        document.getElementById('endTime').value = item.end_time || '';
+      }
+      if (disableId && confirm('确认停用这个账号？')) {
+        try {
+          await apiFetch(`/api/accounts/${disableId}/disable`, { method: 'POST' });
+          await loadAccounts();
+        } catch (error) {
+          document.getElementById('status').className = 'status bad';
+          document.getElementById('status').textContent = error.message;
+        }
+      }
+    });
+
+    resetForm();
+    loadAccounts();
+  </script>
+</body>
+</html>

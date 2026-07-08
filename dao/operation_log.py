@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.exc import SQLAlchemyError
 
-from dao.database import Base, Session, json_text, json_value, utcnow
+from dao.database import Base, Session, beijing_now, format_beijing_time, json_text, json_value
 
 
 class OperationLog(Base):
@@ -17,7 +17,7 @@ class OperationLog(Base):
     role_id = Column(Integer, ForeignKey("user_account.id"), nullable=False)
     act = Column(String(50), nullable=False)
     table_name = Column(String(255), nullable=False)
-    update_time = Column(DateTime, nullable=False, default=utcnow)
+    update_time = Column(DateTime, nullable=False, default=beijing_now)
     change_info = Column(Text, nullable=False, default="{}")
 
     __table_args__ = (
@@ -35,7 +35,7 @@ class OperationLog(Base):
             "role_id": self.role_id,
             "act": self.act,
             "table_name": self.table_name,
-            "update_time": self.update_time,
+            "update_time": format_beijing_time(self.update_time),
             "change_info": json_value(self.change_info),
         }
 
