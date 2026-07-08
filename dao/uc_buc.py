@@ -70,3 +70,23 @@ def add_uc_buc(uc, buc, func):
     finally:
         session.close()
 
+def get_wave_info_by_uc(uc):
+    """根据图片的 uc 找到 buc 再去找到 md5_list"""
+    session = Session()
+    try:
+        uc_buc = session.query(UcBuc.buc).filter_by(uc=uc).first()
+        if not uc_buc:
+            return []
+
+        records = (
+            session.query(WavBuc.wave_md5, WavBuc.position_id)
+            .filter_by(buc=uc_buc.buc)
+            .order_by(WavBuc.position_id, WavBuc.wave_md5)
+            .all()
+        )
+        return [(record.wave_md5, record.position_id) for record in records]
+    except SQLAlchemyError:
+        logging.exception("根据 UC 查询 WAV 信息失败 uc=%s", uc)
+        return []
+    finally:
+        session.close()
