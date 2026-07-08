@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from dao import annotation, label, operation_log, uc_md5_map, user_account, wav_buc  # noqa: F401
+from dao import annotation, label, operation_log, uc_buc, user_account, wav_buc  # noqa: F401
 from dao.database import Session, beijing_now, create_all_tables, json_text
 from dao.label import Label
 from dao.operation_log import OperationLog

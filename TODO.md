@@ -21,15 +21,22 @@
 
 * uc, x1, y1, x2, y2, label, update_time, update_ID, update_reason 不能为空 
 
-#### UC md5 映射关系表
+#### wav_uc 
 
 * wav_buc: wave_md5(string), position_id(str), buc(string)
 
-* buc + func -> img_md5 -> uc 
-
 * 这边不对，应该是 BUC, 一组 wav 的集合，会有一个唯一的 BUC 的编码，直接使用自增(BUC_0000001), buc + func -> 图片 -> 生成 uc 
 
-* 
+#### uc_buc
+
+* buc + func -> img_md5 -> uc 
+
+* uc 是主键，func 是方法，使用字符串
+
+* 增加数据的前提：
+    * buc 需要在 wav_buc 表中存在
+    * func 不能为空
+    * uc 需要在符合 uc 的定义
 
 #### 标签表
 
@@ -70,3 +77,13 @@
 ### 历史数据的处理
 
 * 很多图的名字是有很多的信息的，根据时间进行筛选，然后找到对应的数据的文件名和对应的文件名进行核对即可
+
+### 历史数据的处理步骤
+
+* wav_md5 + sensor_code 入库到表中，得到 buc
+
+* buc + fuc + uc 入库到 图像表中
+
+* 
+
+

@@ -41,6 +41,7 @@ def get_blade_info(md5):
 
 csv_info = CsvUtil.read_csv_to_list("/Volumes/Jokker/Code/TurbineLabelStudio/search_result.csv")
 
+
 for each in csv_info[1:]:
     
     print("-"*100)
@@ -48,6 +49,7 @@ for each in csv_info[1:]:
     
     tags = each[3]
     md5s = each[4]
+    
     
     if each[2] != '6':
         continue
