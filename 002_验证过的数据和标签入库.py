@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from JoTools.utils.FileOperationUtil import FileOperationUtil
 from JoTools.txkjRes.deteRes import DeteRes
 
+
 def _node_text(node, xpath, *, default=None, required=True):
     """读取 XML 节点文本。"""
     child = node.find(xpath)
@@ -75,24 +76,17 @@ if __name__ == "__main__":
     for each in FileOperationUtil.re_all_file("/Volumes/Jokker/Code/TurbineLabelStudio/data/20260604_rename/Annotations", endswitch=[".xml"]):
         a = DeteRes(each)
 
-        
         img_name = a.img_path.split("\\")
-        
+    
         if len(img_name) > 0:
             img_name = img_name[-1]
         else:
             continue
+
+        img_path = os.path.join("/Volumes/Jokker/Code/TurbineLabelStudio/data/20260604", img_name)
         
-        print(img_name)
+        if os.path.exists(img_path):
+            print(img_path)            
+
         
-        for each in a:
-            print(each.x1)
-        
-        
-        exit()
-        
-    
-    
-    # xml_path = "/Volumes/Jokker/Code/TurbineLabelStudio/data/20260604_rename/Annotations/Hgh00dt.xml"
-    # for item in parse_annotation_xml(xml_path):
-    #     print(item)
+

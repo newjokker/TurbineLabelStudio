@@ -23,7 +23,13 @@
 
 #### UC md5 映射关系表
 
-* id(长整型), md5(string), position_id(str), uc(string)
+* wav_buc: wave_md5(string), position_id(str), buc(string)
+
+* buc + func -> img_md5 -> uc 
+
+* 这边不对，应该是 BUC, 一组 wav 的集合，会有一个唯一的 BUC 的编码，直接使用自增(BUC_0000001), buc + func -> 图片 -> 生成 uc 
+
+* 
 
 #### 标签表
 
