@@ -53,7 +53,8 @@ with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         "file_name",
         "time_info",
         "info_count",
-        "tags"
+        "tags",
+        "md5s"
     ])
 
     for img_path in FileOperationUtil.re_all_file(img_dir, endswitch=[".jpg"]):
@@ -85,14 +86,19 @@ with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
         info_list = result.get("info", [])
         info_count = len(info_list)
 
-        if info_count == 6:
+        if 0 < info_count <= 6:
             tags = set()
+            md5_list = []
 
             for item in info_list:
                 for tag in item.get("tags", []):
                     tags.add(tag)
+                each_md5 = item.get("md5", None)
+                if each_md5 is not None:
+                    md5_list.append(each_md5)
 
             tags_str = ",".join(sorted(tags))
+            md5s_str = ",".join(md5_list)
 
             print(f"{file_name}: {tags_str}")
 
@@ -100,7 +106,8 @@ with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
                 file_name,
                 time_info.strftime("%Y-%m-%d %H:%M:%S"),
                 info_count,
-                tags_str
+                tags_str,
+                md5s_str
             ])
 
         else:
@@ -110,6 +117,7 @@ with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
                 file_name,
                 time_info.strftime("%Y-%m-%d %H:%M:%S"),
                 info_count,
+                "",
                 ""
             ])
 

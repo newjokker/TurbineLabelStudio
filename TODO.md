@@ -17,9 +17,13 @@
 
 #### 主表
 
-* id(长整型), md5(string), position_id(str), uc(string), x1(float), y1(float), x2(float), y2(float), label_id(int), difficult(bool), update_time(UTC), update_ID, update_reason(string), extra_info(JSON)  
+* id(长整型), uc(string), x1(float), y1(float), x2(float), y2(float), label_id(int), difficult(bool), update_time(UTC), update_ID, update_reason(string), extra_info(JSON)  
 
 * uc, x1, y1, x2, y2, label, update_time, update_ID, update_reason 不能为空 
+
+#### UC md5 映射关系表
+
+* id(长整型), md5(string), position_id(str), uc(string)
 
 #### 标签表
 
