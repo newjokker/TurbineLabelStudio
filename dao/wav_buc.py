@@ -105,19 +105,6 @@ def add_wav_buc(wave_position_id):
         session.close()
 
 
-def get_all_wav_buc():
-    """获取全部 WAV MD5 与 BUC 映射记录。"""
-    session = Session()
-    try:
-        records = session.query(WavBuc).order_by(WavBuc.wave_md5).all()
-        return [record.to_dict() for record in records]
-    except SQLAlchemyError:
-        logging.exception("查询 wav_buc 表失败")
-        return []
-    finally:
-        session.close()
-
-
 def get_buc_by_wave_md5(wave_md5):
     """根据 WAV MD5 获取 BUC。"""
     session = Session()
