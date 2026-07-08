@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from dao import annotation, label, operation_log, user_account  # noqa: F401
+from dao.annotation import ensure_annotation_schema
 from dao.database import Session, beijing_now, create_all_tables, json_text
 from dao.label import Label
 from dao.operation_log import OperationLog
@@ -130,6 +131,7 @@ def _require(actor, permission):
 @app.on_event("startup")
 def startup():
     create_all_tables()
+    ensure_annotation_schema()
 
 
 @app.get("/")
