@@ -2,9 +2,9 @@
 """本地 wav_buc 表：WAV MD5 与 BUC 映射关系。"""
 import logging
 
-from sqlalchemy import CheckConstraint, Column, Index, String
+from sqlalchemy import CheckConstraint, Column, Index, String, cast, func
+from sqlalchemy import Integer as SqlInteger
 from sqlalchemy.exc import SQLAlchemyError
-
 from dao.database import Base, Session
 
 
@@ -44,13 +44,11 @@ class WavBuc(Base):
 
 def generate_next_buc(session):
     """生成下一个 BUC 编码：BUC_000001、BUC_000002..."""
-    rows = session.query(WavBuc.buc).filter(WavBuc.buc.like("BUC_%")).all()
-    max_number = 0
-    for row in rows:
-        try:
-            max_number = max(max_number, int(row.buc.replace("BUC_", "", 1)))
-        except (TypeError, ValueError):
-            continue
+    max_number = (
+        session.query(func.max(cast(func.substr(WavBuc.buc, 5), SqlInteger)))
+        .filter(WavBuc.buc.like("BUC_%"))
+        .scalar()
+    ) or 0
     return f"BUC_{max_number + 1:06d}"
 
 
