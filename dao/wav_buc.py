@@ -155,5 +155,18 @@ def get_format_wave_md5_info_by_buc(buc):
 
 
 def get_all_buc_list():
-    # 获取所有的 buc 所在的列表
-    pass
+    """获取所有 BUC 编码列表，按 BUC 数字顺序排序。"""
+    session = Session()
+    try:
+        records = (
+            session.query(WavBuc.buc)
+            .distinct()
+            .order_by(cast(func.substr(WavBuc.buc, 5), SqlInteger))
+            .all()
+        )
+        return [record.buc for record in records]
+    except SQLAlchemyError:
+        logging.exception("查询所有 BUC 列表失败")
+        return []
+    finally:
+        session.close()

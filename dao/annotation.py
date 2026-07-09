@@ -137,6 +137,29 @@ def add_annotation(
 
 def get_ana_by_buc_func(buc, func_name):
     """根据 buc + func_name 找到所有的标注信息"""
-    pass
+    if not buc or not func_name:
+        logging.error("根据 BUC 和 func 查询标注失败 buc/func_name 不能为空")
+        return None
 
+    session = Session()
+    try:
+        records = (
+            session.query(Annotation, label.Label.label)
+            .join(label.Label, Annotation.label_id == label.Label.id)
+            .filter(Annotation.buc == buc, Annotation.func == func_name)
+            .order_by(Annotation.id)
+            .all()
+        )
+        return [
+            {
+                **annotation.to_dict(),
+                "label": label_name,
+            }
+            for annotation, label_name in records
+        ]
+    except SQLAlchemyError:
+        logging.exception("根据 BUC 和 func 查询标注失败 buc=%s func_name=%s", buc, func_name)
+        return None
+    finally:
+        session.close()
 
