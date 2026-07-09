@@ -7,11 +7,44 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header id="siteHeader"></header>
   <main class="page viewer-page">
-    <section class="panel">
-      <div class="toolbar viewer-toolbar">
-        <div class="viewer-query">
+    <section class="viewer-shell">
+      <section class="panel viewer-main-panel">
+        <div class="media-layout">
+          <div class="audio-progress">
+            <button class="secondary icon-button" id="playBtn" title="播放" aria-label="播放" disabled>▶</button>
+            <input id="audioProgress" type="range" min="0" max="0" step="0.01" value="0" disabled>
+            <span id="audioTime">0:00 / 0:00</span>
+            <label class="gain-control">增益
+              <select id="gainInput">
+                <option value="0.1">0.1</option>
+                <option value="0.5">0.5</option>
+                <option value="1" selected>1</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+          </div>
+          <div class="channel-label-panel">
+            <div class="channel-label-list" id="channelList"></div>
+          </div>
+          <div class="image-stage" id="imageStage">
+            <div class="image-canvas" id="imageCanvas">
+              <img id="targetImage" alt="">
+              <svg id="boxLayer" viewBox="0 0 1200 1200"></svg>
+              <div class="playhead-line hidden" id="playheadLine"></div>
+            </div>
+            <div class="empty-state" id="emptyImage">暂无图片</div>
+          </div>
+        </div>
+        <audio id="activeAudio" preload="metadata"></audio>
+      </section>
+
+      <aside class="viewer-side">
+        <section class="panel load-panel">
           <label>BUC
             <input id="bucInput" list="bucOptions" placeholder="BUC_000001">
           </label>
@@ -19,43 +52,16 @@
             <input id="funcInput" list="funcOptions" placeholder="wh_jzp_before_20260708">
           </label>
           <button id="loadBtn">加载</button>
-        </div>
-        <span class="status" id="status">加载中...</span>
-      </div>
-      <datalist id="bucOptions"></datalist>
-      <datalist id="funcOptions"></datalist>
-    </section>
-
-    <section class="viewer-shell">
-      <section class="panel viewer-main-panel">
-        <div class="viewer-modebar">
-          <button class="secondary active" data-mode="image" id="imageModeBtn">图片</button>
-          <button class="secondary" data-mode="mel" id="melModeBtn">Mel</button>
-        </div>
-        <div class="image-stage" id="imageStage">
-          <div class="image-canvas" id="imageCanvas">
-            <img id="targetImage" alt="">
-            <svg id="boxLayer"></svg>
-          </div>
-          <div class="empty-state" id="emptyImage">暂无图片</div>
-        </div>
-      </section>
-
-      <aside class="viewer-side">
+          <span class="status" id="status">加载中...</span>
+          <datalist id="bucOptions"></datalist>
+          <datalist id="funcOptions"></datalist>
+        </section>
         <section class="panel annotation-panel">
           <div class="side-title">
             <strong>标注结果</strong>
             <span id="annotationCount">0</span>
           </div>
           <div class="annotation-list" id="annotationList"></div>
-        </section>
-
-        <section class="panel audio-panel">
-          <div class="side-title">
-            <strong>六通道音频</strong>
-            <span id="channelCount">0</span>
-          </div>
-          <div class="channel-list" id="channelList"></div>
         </section>
       </aside>
     </section>
@@ -64,15 +70,16 @@
   <script src="/static/common.js"></script>
   <script>
     requireLogin();
-    renderHeader('annotation_view');
 
     const state = {
       options: [],
       data: null,
       selectedId: null,
-      mode: 'image',
-      naturalWidth: 0,
-      naturalHeight: 0
+      selectedChannel: null,
+      segmentTimer: null,
+      playbackContext: null,
+      playbackSourceNode: null,
+      playbackGainNode: null
     };
 
     const statusEl = document.getElementById('status');
@@ -84,6 +91,14 @@
     const emptyImage = document.getElementById('emptyImage');
     const annotationList = document.getElementById('annotationList');
     const channelList = document.getElementById('channelList');
+    const activeAudio = document.getElementById('activeAudio');
+    const playBtn = document.getElementById('playBtn');
+    const audioProgress = document.getElementById('audioProgress');
+    const audioTime = document.getElementById('audioTime');
+    const gainInput = document.getElementById('gainInput');
+    const playheadLine = document.getElementById('playheadLine');
+    const CHANNEL_ORDER = ['B1A', 'B1B', 'B2A', 'B2B', 'B3A', 'B3B'];
+    const IMAGE_WIDTH = 1200;
 
     function setStatus(text, type = '') {
       statusEl.className = `status ${type}`.trim();
@@ -109,12 +124,7 @@
 
     function renderBoxes() {
       const annotations = state.data?.annotations || [];
-      if (!state.naturalWidth || !state.naturalHeight) return;
-      boxLayer.setAttribute('viewBox', `0 0 ${state.naturalWidth} ${state.naturalHeight}`);
-      if (state.mode === 'mel') {
-        boxLayer.innerHTML = '';
-        return;
-      }
+      boxLayer.setAttribute('viewBox', '0 0 1200 1200');
       boxLayer.innerHTML = annotations.map(item => {
         const x = Math.min(item.x1, item.x2);
         const y = Math.min(item.y1, item.y2);
@@ -125,12 +135,14 @@
         return `
           <g class="anno-box ${selected ? 'selected' : ''}" data-id="${item.id}">
             <rect x="${x}" y="${y}" width="${width}" height="${height}" style="--box:${escapeHtml(color)}"></rect>
-            <text x="${x + 4}" y="${Math.max(y + 16, 16)}" style="--box:${escapeHtml(color)}">${escapeHtml(item.label || item.label_id)}</text>
           </g>
         `;
       }).join('');
       boxLayer.querySelectorAll('.anno-box').forEach(node => {
-        node.addEventListener('click', () => selectAnnotation(Number(node.dataset.id)));
+        node.addEventListener('click', event => {
+          event.stopPropagation();
+          selectAnnotation(Number(node.dataset.id));
+        });
       });
     }
 
@@ -157,25 +169,49 @@
 
     function renderChannels() {
       const channels = state.data?.channels || [];
-      const readyCount = channels.filter(item => item.audio_url).length;
-      document.getElementById('channelCount').textContent = readyCount;
+      if (!state.selectedChannel || !channels.some(item => item.position_id === state.selectedChannel && item.audio_url)) {
+        state.selectedChannel = channels.find(item => item.audio_url)?.position_id || null;
+      }
       channelList.innerHTML = channels.map(item => `
-        <div class="channel-row">
-          <div>
-            <strong>${escapeHtml(item.position_id)}</strong>
-            <small>${escapeHtml(item.md5 || '缺失')}</small>
-          </div>
-          ${item.audio_url ? `<audio controls preload="none" src="${escapeHtml(item.audio_url)}"></audio>` : '<span class="status bad">无音频</span>'}
+        <div class="channel-label ${item.position_id === state.selectedChannel ? 'active' : ''} ${item.audio_url ? '' : 'disabled'}">
+          ${escapeHtml(item.position_id)}
         </div>
       `).join('');
+      loadSelectedAudio();
     }
 
-    function selectAnnotation(id) {
+    function channelFromPointer(event) {
+      if (!event) return null;
+      const rect = imageCanvas.getBoundingClientRect();
+      if (!rect.height) return null;
+      const y = Math.max(0, Math.min(rect.height - 1, event.clientY - rect.top));
+      const index = Math.max(0, Math.min(CHANNEL_ORDER.length - 1, Math.floor(y / rect.height * CHANNEL_ORDER.length)));
+      return CHANNEL_ORDER[index];
+    }
+
+    function markSelectedChannel() {
+      channelList.querySelectorAll('.channel-label').forEach(row => {
+        row.classList.toggle('active', row.textContent.trim() === state.selectedChannel);
+      });
+    }
+
+    function selectAnnotation(id, options = {}) {
       state.selectedId = id;
       renderBoxes();
       renderAnnotationList();
       const row = annotationList.querySelector(`[data-id="${id}"]`);
       if (row) row.scrollIntoView({ block: 'nearest' });
+      if (options.autoPlay) playSelectedAnnotation();
+    }
+
+    function playSelectedAnnotationAtPointer(event) {
+      if (!state.selectedId) return;
+      const channel = channelFromPointer(event);
+      if (!channel || !(state.data?.channels || []).some(item => item.position_id === channel && item.audio_url)) return;
+      state.selectedChannel = channel;
+      markSelectedChannel();
+      loadSelectedAudio();
+      playSelectedAnnotation();
     }
 
     async function loadOptions() {
@@ -201,8 +237,8 @@
         const data = await apiFetch(`/api/annotation-view/data?buc=${encodeURIComponent(buc)}&func=${encodeURIComponent(funcName)}`);
         state.data = data;
         state.selectedId = data.annotations[0]?.id || null;
-        state.naturalWidth = 0;
-        state.naturalHeight = 0;
+        state.selectedChannel = data.channels.find(item => item.audio_url)?.position_id || null;
+        resetAudio();
         targetImage.src = data.image_url;
         emptyImage.classList.add('hidden');
         renderAnnotationList();
@@ -214,9 +250,9 @@
     }
 
     targetImage.addEventListener('load', () => {
-      state.naturalWidth = targetImage.naturalWidth;
-      state.naturalHeight = targetImage.naturalHeight;
-      imageCanvas.style.setProperty('--image-aspect', `${state.naturalWidth} / ${state.naturalHeight}`);
+      if (targetImage.naturalWidth !== 1200 || targetImage.naturalHeight !== 1200) {
+        setStatus(`图片尺寸为 ${targetImage.naturalWidth}×${targetImage.naturalHeight}，标注层仍按 1200×1200 坐标显示`, 'bad');
+      }
       renderBoxes();
     });
 
@@ -227,18 +263,201 @@
     });
 
     document.getElementById('loadBtn').addEventListener('click', loadData);
-    document.getElementById('imageModeBtn').addEventListener('click', () => {
-      state.mode = 'image';
-      document.getElementById('imageModeBtn').classList.add('active');
-      document.getElementById('melModeBtn').classList.remove('active');
-      renderBoxes();
+    imageCanvas.addEventListener('click', playSelectedAnnotationAtPointer);
+
+    function formatTime(seconds) {
+      if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
+      const minutes = Math.floor(seconds / 60);
+      const remain = Math.floor(seconds % 60).toString().padStart(2, '0');
+      return `${minutes}:${remain}`;
+    }
+
+    function updateAudioTime() {
+      const duration = activeAudio.duration || 0;
+      audioProgress.max = duration || 0;
+      audioProgress.value = activeAudio.currentTime || 0;
+      audioTime.textContent = `${formatTime(activeAudio.currentTime)} / ${formatTime(duration)}`;
+      updatePlayhead();
+    }
+
+    function resetAudio() {
+      clearSegmentTimer();
+      activeAudio.pause();
+      activeAudio.removeAttribute('src');
+      activeAudio.load();
+      playBtn.textContent = '▶';
+      playBtn.title = '播放';
+      playBtn.setAttribute('aria-label', '播放');
+      playBtn.disabled = true;
+      audioProgress.disabled = true;
+      audioProgress.value = 0;
+      audioProgress.max = 0;
+      audioTime.textContent = '0:00 / 0:00';
+      hidePlayhead();
+    }
+
+    function loadSelectedAudio() {
+      const channel = (state.data?.channels || []).find(item => item.position_id === state.selectedChannel);
+      if (!channel?.audio_url) {
+        resetAudio();
+        return;
+      }
+      activeAudio.src = channel.audio_url;
+      activeAudio.load();
+      playBtn.disabled = false;
+      audioProgress.disabled = false;
+      playBtn.textContent = '▶';
+      playBtn.title = '播放';
+      playBtn.setAttribute('aria-label', '播放');
+    }
+
+    function selectedAnnotation() {
+      return (state.data?.annotations || []).find(item => item.id === state.selectedId) || null;
+    }
+
+    function currentDuration() {
+      return Number(activeAudio.duration || 0);
+    }
+
+    function annotationTimeRange(item) {
+      const duration = currentDuration();
+      if (!item || !duration) return null;
+      const left = Math.max(0, Math.min(item.x1, item.x2));
+      const right = Math.min(IMAGE_WIDTH, Math.max(item.x1, item.x2));
+      const start = left / IMAGE_WIDTH * duration;
+      const end = right / IMAGE_WIDTH * duration;
+      if (end <= start) return null;
+      return { start, end };
+    }
+
+    function clearSegmentTimer() {
+      if (state.segmentTimer) {
+        clearTimeout(state.segmentTimer);
+        state.segmentTimer = null;
+      }
+    }
+
+    function getGain() {
+      const value = Number(gainInput.value || 1);
+      if (!Number.isFinite(value)) return 1;
+      return Math.max(0.01, Math.min(100, value));
+    }
+
+    function setupPlaybackGain() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      if (!state.playbackContext) state.playbackContext = new AudioContextClass();
+      if (!state.playbackSourceNode) {
+        state.playbackGainNode = state.playbackContext.createGain();
+        state.playbackSourceNode = state.playbackContext.createMediaElementSource(activeAudio);
+        state.playbackSourceNode.connect(state.playbackGainNode).connect(state.playbackContext.destination);
+      }
+      updatePlaybackGain();
+    }
+
+    function resumePlaybackContext() {
+      setupPlaybackGain();
+      if (state.playbackContext?.state === 'suspended') {
+        state.playbackContext.resume();
+      }
+    }
+
+    function updatePlaybackGain() {
+      if (!state.playbackGainNode) return;
+      const currentTime = state.playbackContext ? state.playbackContext.currentTime : 0;
+      state.playbackGainNode.gain.setTargetAtTime(getGain(), currentTime, 0.01);
+    }
+
+    function hidePlayhead() {
+      playheadLine.classList.add('hidden');
+    }
+
+    function updatePlayhead() {
+      const duration = currentDuration();
+      if (!duration || activeAudio.paused) {
+        hidePlayhead();
+        return;
+      }
+      const index = CHANNEL_ORDER.indexOf(state.selectedChannel);
+      if (index < 0) {
+        hidePlayhead();
+        return;
+      }
+      const leftPercent = Math.max(0, Math.min(100, activeAudio.currentTime / duration * 100));
+      playheadLine.style.left = `${leftPercent}%`;
+      playheadLine.style.top = `${index / CHANNEL_ORDER.length * 100}%`;
+      playheadLine.style.height = `${100 / CHANNEL_ORDER.length}%`;
+      playheadLine.classList.remove('hidden');
+    }
+
+    function playSelectedAnnotation() {
+      const item = selectedAnnotation();
+      if (!item || !activeAudio.src) return;
+      const playRange = () => {
+        const range = annotationTimeRange(item);
+        if (!range) return;
+        clearSegmentTimer();
+        activeAudio.currentTime = range.start;
+        resumePlaybackContext();
+        activeAudio.play().then(() => {
+          playBtn.textContent = '❚❚';
+          playBtn.title = '暂停';
+          playBtn.setAttribute('aria-label', '暂停');
+          updatePlayhead();
+          state.segmentTimer = setTimeout(() => {
+            activeAudio.pause();
+            playBtn.textContent = '▶';
+            playBtn.title = '播放';
+            playBtn.setAttribute('aria-label', '播放');
+            hidePlayhead();
+          }, Math.max(20, (range.end - range.start) * 1000));
+        }).catch(error => setStatus(error.message, 'bad'));
+      };
+
+      if (activeAudio.readyState >= 1) {
+        playRange();
+      } else {
+        activeAudio.addEventListener('loadedmetadata', playRange, { once: true });
+      }
+    }
+
+    playBtn.addEventListener('click', () => {
+      if (!activeAudio.src) return;
+      if (activeAudio.paused) {
+        playSelectedAnnotation();
+      } else {
+        clearSegmentTimer();
+        activeAudio.pause();
+        playBtn.textContent = '▶';
+        playBtn.title = '播放';
+        playBtn.setAttribute('aria-label', '播放');
+        hidePlayhead();
+      }
     });
-    document.getElementById('melModeBtn').addEventListener('click', () => {
-      state.mode = 'mel';
-      document.getElementById('melModeBtn').classList.add('active');
-      document.getElementById('imageModeBtn').classList.remove('active');
-      renderBoxes();
+
+    audioProgress.addEventListener('input', () => {
+      clearSegmentTimer();
+      activeAudio.currentTime = Number(audioProgress.value || 0);
+      updatePlayhead();
     });
+    activeAudio.addEventListener('loadedmetadata', updateAudioTime);
+    activeAudio.addEventListener('timeupdate', updateAudioTime);
+    activeAudio.addEventListener('pause', () => {
+      if (activeAudio.currentTime >= currentDuration()) return;
+      playBtn.textContent = '▶';
+      playBtn.title = '播放';
+      playBtn.setAttribute('aria-label', '播放');
+      hidePlayhead();
+    });
+    activeAudio.addEventListener('play', resumePlaybackContext);
+    activeAudio.addEventListener('ended', () => {
+      clearSegmentTimer();
+      playBtn.textContent = '▶';
+      playBtn.title = '播放';
+      playBtn.setAttribute('aria-label', '播放');
+      hidePlayhead();
+    });
+    gainInput.addEventListener('change', updatePlaybackGain);
 
     loadOptions().then(loadData).catch(error => setStatus(error.message, 'bad'));
   </script>

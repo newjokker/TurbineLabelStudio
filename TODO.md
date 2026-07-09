@@ -118,6 +118,12 @@ res = get_buc_image_by_func(wav_files, func_name=func_name, save_path=f"{buc}_{f
 
 * img 的命名方式为 f"func_name/{buc}_{func_name}.jpg" 
 
+### 数据对齐
+
+* 可以输出 jpg 和 对应的 xml 这样可以在 labelimg 里面进行标注，标注的结果也能映射回数据库
+
+* 可以输出格式化的数据，六条 wav 文件放在一个文件夹中，文件夹的文件名是 buc，然后这个文件夹中还存放 xml 还有对应的 img 图片，xml 和 img 的名字一样，后缀不一样，都是 buc + func
+
 
 
 
