@@ -29,4 +29,4 @@ def get_wav_from_buc(buc, save_dir):
             load_wav_by_md5(each[0], save_dir)
         
 
-get_wav_from_buc("BUC_000086", "/Volumes/Jokker/Code/TurbineLabelStudio/data/test")
+get_wav_from_buc("BUC_002163", "/Volumes/Jokker/Code/TurbineLabelStudio/data/test")

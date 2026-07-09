@@ -2,7 +2,7 @@
 
 import os
 
-TURBINE_LABEL_DATA_DIR = "./logs"
+TURBINE_LABEL_DATA_DIR = "/Volumes/Jokker/Code/TurbineLabelStudio/logs"
 
 LOCAL_LABEL_STUDIO_DB = os.path.join(TURBINE_LABEL_DATA_DIR, "label_studio.db")
 
