@@ -66,6 +66,40 @@ def add_user_account(name, password, role, alias=None, end_time=None):
         session.close()
 
 
+def get_user_info_by_name(name):
+    """根据用户名返回人员登录信息。"""
+    if not name:
+        logging.error("根据 name 查询人员登录记录失败 name 不能为空")
+        return None
+
+    session = Session()
+    try:
+        record = session.query(UserAccount).filter_by(name=name).first()
+        return record.to_dict() if record else None
+    except SQLAlchemyError:
+        logging.exception("根据 name 查询人员登录记录失败 name=%s", name)
+        return None
+    finally:
+        session.close()
+
+
+def get_user_info_by_id(user_id):
+    """根据用户 id 返回人员登录信息。"""
+    if user_id is None:
+        logging.error("根据 id 查询人员登录记录失败 user_id 不能为空")
+        return None
+
+    session = Session()
+    try:
+        record = session.query(UserAccount).filter_by(id=user_id).first()
+        return record.to_dict() if record else None
+    except SQLAlchemyError:
+        logging.exception("根据 id 查询人员登录记录失败 user_id=%s", user_id)
+        return None
+    finally:
+        session.close()
+
+
 def get_all_user_accounts():
     """获取全部人员登录记录。"""
     session = Session()
