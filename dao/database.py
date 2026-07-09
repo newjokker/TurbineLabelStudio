@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 
@@ -15,9 +15,6 @@ from config import LABEL_STUDIO_BACKUP_DIR, LOCAL_LABEL_STUDIO_DB
 
 
 DATABASE_URL = f"sqlite:///{LOCAL_LABEL_STUDIO_DB}"
-
-os.makedirs(os.path.dirname(LOCAL_LABEL_STUDIO_DB), exist_ok=True)
-os.makedirs(LABEL_STUDIO_BACKUP_DIR, exist_ok=True)
 
 engine = create_engine(
     DATABASE_URL,
@@ -81,8 +78,38 @@ def json_value(value):
 
 def create_all_tables():
     """创建所有已经导入到 Base.metadata 的表。"""
+    # drop_incompatible_annotation_table()
     Base.metadata.create_all(engine)
     backup_database_once_per_day()
+
+
+def drop_incompatible_annotation_table():
+    """annotation 表结构不匹配当前模型时直接删除，随后由 create_all 重建。"""
+    if not inspect(engine).has_table("annotation"):
+        return False
+
+    columns = {column["name"] for column in inspect(engine).get_columns("annotation")}
+    required_columns = {
+        "id",
+        "buc",
+        "func",
+        "x1",
+        "y1",
+        "x2",
+        "y2",
+        "label_id",
+        "difficult",
+        "update_time",
+        "update_id",
+        "update_reason",
+        "extra_info",
+    }
+    if required_columns.issubset(columns) and "uc" not in columns:
+        return False
+
+    Base.metadata.tables["annotation"].drop(engine, checkfirst=True)
+    logging.warning("annotation 表结构不兼容，已删除并将按当前模型重建")
+    return True
 
 
 def backup_database_once_per_day():

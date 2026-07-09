@@ -72,3 +72,37 @@ def get_all_labels():
         return []
     finally:
         session.close()
+
+
+def get_label_info_by_label(label):
+    """根据输入的 label 字符串返回对应的 label 信息"""
+    if not label:
+        logging.error("根据 label 查询标签失败 label 不能为空")
+        return None
+
+    session = Session()
+    try:
+        record = session.query(Label).filter_by(label=label).first()
+        return record.to_dict() if record else None
+    except SQLAlchemyError:
+        logging.exception("根据 label 查询标签失败 label=%s", label)
+        return None
+    finally:
+        session.close()
+
+
+def get_label_info_by_id(label_id):
+    """根据 label 的 id 返回对应的 label 信息"""
+    if label_id is None:
+        logging.error("根据 id 查询标签失败 label_id 不能为空")
+        return None
+
+    session = Session()
+    try:
+        record = session.query(Label).filter_by(id=label_id).first()
+        return record.to_dict() if record else None
+    except SQLAlchemyError:
+        logging.exception("根据 id 查询标签失败 label_id=%s", label_id)
+        return None
+    finally:
+        session.close()

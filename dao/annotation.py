@@ -51,7 +51,7 @@ class Annotation(Base):
     difficult = Column(Boolean, nullable=False, default=False)
     update_time = Column(DateTime, nullable=False, default=utc_now, onupdate=utc_now)
     update_id = Column(Integer, ForeignKey("user_account.id"), nullable=False)
-    update_reason = Column(String(500), nullable=False)
+    update_reason = Column(String(500), nullable=True)
     extra_info = Column(Text, nullable=False, default="{}")
 
     __table_args__ = (
@@ -96,13 +96,13 @@ def add_annotation(
     y2,
     label_id,
     update_id,
-    update_reason,
+    update_reason=None,
     difficult=False,
     extra_info=None,
 ):
     """添加主表标注记录。"""
-    if not buc or not func or update_id is None or not update_reason:
-        logging.error("添加标注记录失败 buc/func/update_id/update_reason 不能为空")
+    if not buc or not func or update_id is None:
+        logging.error("添加标注记录失败 buc/func/update_id 不能为空")
         return None
 
     session = Session()
