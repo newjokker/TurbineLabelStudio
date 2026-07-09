@@ -19,6 +19,8 @@ from typing import List, Optional, Sequence, Tuple, Union
 import numpy as np
 import soundfile as sf
 from scipy.signal import butter, filtfilt, stft
+from dao.wav_buc import get_wave_md5_info_by_buc, get_format_wave_md5_info_by_buc
+
 
 PathLike = Union[str, os.PathLike]
 
@@ -29,7 +31,6 @@ DEFAULT_MEL_CONFIG = {
     "fmax": 24000,
     "cutoff_freq": 500,
     "filter_order": 5,
-    # "reorder": [0, 3, 1, 4, 2, 5],
     "reorder": [0,1,2,3,4,5],
     "output_width": 1200,
     "row_height": 200,
@@ -258,11 +259,7 @@ def wavs_to_stacked_mel_image(
     return np.vstack(rows)
 
 
-def save_6_wavs_mel_jpg(
-    wav_files: Sequence[str],
-    jpg_path: PathLike,
-    mel_config: Optional[dict] = None,
-) -> str:
+def wh_jzp_before_20260708(wav_files, jpg_path, mel_config = None,):
     """将 6 个 wav 生成梅尔频谱拼接图，并保存为 jpg。"""
     output_path = Path(jpg_path).expanduser().resolve()
     rgb = wavs_to_stacked_mel_image(wav_files, mel_config=mel_config)
@@ -270,30 +267,26 @@ def save_6_wavs_mel_jpg(
     return str(output_path)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Generate one stacked mel jpg from exactly 6 wav files.")
-    parser.add_argument("wav_files", nargs="*", help="Exactly 6 wav file paths.")
-    parser.add_argument("-o", "--output", default="test_mel.jpg", help="Output jpg path.")
-    return parser.parse_args()
+def get_mel_by_func(buc, func_name, save_path):
+    """根据方法和 buc 获取 mel 图"""
+    # buc 获取 
 
 
-def main():
-    args = parse_args()
-    if args.wav_files:
-        wav_list = args.wav_files
-    else:
-        wav_list = [
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/0b6fab18df34d68627ba81468806fd70.wav",
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/174586a5f685b88966ce5c8eb50cff50.wav",
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/aceb8572766c154d7e1078fd11e0df6a.wav",
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/c5e8b0b8e8cefffe340c5c6e27d8d910.wav",
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/dc25c98eb680ba32a76918a6c294450f.wav",
-            "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/e311a986c3368ccca5c0031505f76c3d.wav",
-        ]
 
-    saved_path = save_6_wavs_mel_jpg(wav_list, args.output)
+def test():
+
+    wav_list = [
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/0b6fab18df34d68627ba81468806fd70.wav",
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/174586a5f685b88966ce5c8eb50cff50.wav",
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/aceb8572766c154d7e1078fd11e0df6a.wav",
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/c5e8b0b8e8cefffe340c5c6e27d8d910.wav",
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/dc25c98eb680ba32a76918a6c294450f.wav",
+        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/e311a986c3368ccca5c0031505f76c3d.wav",
+    ]
+
+    saved_path = wh_jzp_before_20260708(wav_list, "res.jpg")
     print(f"梅尔拼接图已保存: {saved_path}")
 
 
 if __name__ == "__main__":
-    main()
+    test()

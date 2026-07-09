@@ -129,3 +129,35 @@ def get_wave_md5_info_by_buc(buc):
         return []
     finally:
         session.close()
+
+
+def get_format_wave_md5_info_by_buc(buc):
+    """根据 BUC 获取 WAV MD5 列表。"""
+    session = Session()
+    try:
+        records = session.query(WavBuc.wave_md5, WavBuc.position_id).filter_by(buc=buc).order_by(WavBuc.wave_md5).all()
+        info = [{record.position_id, record.wave_md5} for record in records]
+        res = []
+        if "B1A" in info:
+            res.append(info["B1A"])
+        if "B1B" in info:
+            res.append(info["B1B"])
+        if "B2A" in info:
+            res.append(info["B2A"])
+        if "B2B" in info:
+            res.append(info["B2B"])
+        if "B3A" in info:
+            res.append(info["B3A"])
+        if "B3B" in info:
+            res.append(info["B3B"])
+    
+        if len(res) == 6:
+            return res
+        else:
+            return None
+    
+    except SQLAlchemyError:
+        logging.exception("根据 BUC 查询 WAV MD5 列表失败 buc=%s", buc)
+        return []
+    finally:
+        session.close()

@@ -11,8 +11,12 @@ LOCAL_LABEL_STUDIO_DB = os.path.join(TURBINE_LABEL_DATA_DIR, "label_studio.db")
 
 LABEL_STUDIO_BACKUP_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "backup")
 
-# 存放临时的缓存文件
-TEMP_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "temp")
+# 存放缓存文件
+CACHE_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "temp")
 
+# wav 的缓存 md5.wav
+WAV_TEMP_DIR = os.path.join(CACHE_DIR, "wav")
 
+# 图片的缓存 buc + func .jpg
+IMG_TEMP_DIR = os.path.join(CACHE_DIR, "img")
 
