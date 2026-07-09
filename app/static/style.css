@@ -184,8 +184,9 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   border-radius: 0;
 }
 .media-layout {
+  --annotation-view-size: 720px;
   display: grid;
-  grid-template-columns: 800px 44px;
+  grid-template-columns: var(--annotation-view-size) 44px;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
@@ -193,7 +194,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 }
 .audio-progress,
 .image-stage {
-  width: 800px;
+  width: var(--annotation-view-size);
   justify-self: center;
 }
 .audio-progress {
@@ -250,8 +251,8 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 }
 .image-canvas {
   position: relative;
-  width: 800px;
-  height: 800px;
+  width: var(--annotation-view-size);
+  height: var(--annotation-view-size);
   aspect-ratio: 1 / 1;
   border: 1px solid var(--line);
   background: #fff;
@@ -309,12 +310,21 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 }
 .viewer-side {
   min-width: 0;
+  min-height: 0;
+  height: calc(100vh - 20px);
+  align-self: start;
+  position: sticky;
+  top: 10px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   padding: 10px 10px 10px 0;
+  overflow: hidden;
 }
 .load-panel {
+  position: relative;
+  z-index: 10;
+  overflow: visible;
   padding: 10px;
   display: grid;
   gap: 8px;
@@ -329,6 +339,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   padding: 0 10px;
 }
 .edit-panel {
+  overflow: visible;
   display: grid;
   gap: 8px;
   padding: 8px;
@@ -336,8 +347,54 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   border-radius: 6px;
   background: #fbfcfd;
 }
-.annotation-panel {
+.label-dropdown {
+  position: relative;
   min-width: 0;
+}
+.label-dropdown-button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label-dropdown-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.14);
+}
+.label-dropdown-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label-dropdown-option:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.annotation-panel {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -354,13 +411,26 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   color: var(--muted);
   font-size: 13px;
 }
+.annotation-title-tools {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.annotation-title-tools select {
+  width: 150px;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
 .side-title.compact {
   min-height: 42px;
   padding: 8px 10px;
 }
 .annotation-list {
+  min-height: 0;
   overflow: auto;
-  max-height: calc(100vh - 190px);
   padding: 8px;
   display: grid;
   gap: 8px;
@@ -408,7 +478,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   grid-column: 2;
   grid-row: 2;
   width: 44px;
-  height: 800px;
+  height: var(--annotation-view-size);
   overflow: hidden;
 }
 .channel-button-list {
@@ -451,7 +521,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   .image-stage,
   .channel-button-panel {
     grid-column: 1;
-    width: min(100%, 800px);
+    width: min(100%, var(--annotation-view-size));
     justify-self: center;
   }
   .channel-button-panel {
@@ -464,11 +534,20 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   .viewer-shell {
     min-height: auto;
   }
+  .viewer-side {
+    height: auto;
+    position: static;
+    overflow: visible;
+    padding: 10px;
+  }
   .image-canvas {
-    width: min(100%, 800px);
+    width: min(100%, var(--annotation-view-size));
     height: auto;
   }
   .annotation-list {
     max-height: 300px;
+  }
+  .annotation-title-tools select {
+    width: 130px;
   }
 }

@@ -60,7 +60,11 @@
           </div>
           <div class="edit-panel hidden" id="editPanel">
             <label>新增标签
-              <select id="editLabelSelect"></select>
+              <select id="editLabelSelect" class="hidden" aria-hidden="true" tabindex="-1"></select>
+              <div class="label-dropdown">
+                <button class="secondary label-dropdown-button" id="editLabelButton" type="button">请选择标签</button>
+                <div class="label-dropdown-menu hidden" id="editLabelMenu"></div>
+              </div>
             </label>
           </div>
           <span class="status hidden" id="status"></span>
@@ -68,7 +72,12 @@
         <section class="panel annotation-panel">
           <div class="side-title">
             <strong>标注结果</strong>
-            <span id="annotationCount">0</span>
+            <div class="annotation-title-tools">
+              <select id="annotationJumpSelect" aria-label="切换标注结果" disabled>
+                <option value="">暂无标注</option>
+              </select>
+              <span id="annotationCount">0</span>
+            </div>
           </div>
           <div class="annotation-list" id="annotationList"></div>
         </section>
@@ -104,6 +113,7 @@
     const boxLayer = document.getElementById('boxLayer');
     const emptyImage = document.getElementById('emptyImage');
     const annotationList = document.getElementById('annotationList');
+    const annotationJumpSelect = document.getElementById('annotationJumpSelect');
     const channelButtonList = document.getElementById('channelButtonList');
     const activeAudio = document.getElementById('activeAudio');
     const playBtn = document.getElementById('playBtn');
@@ -115,6 +125,8 @@
     const deleteAnnotationBtn = document.getElementById('deleteAnnotationBtn');
     const editPanel = document.getElementById('editPanel');
     const editLabelSelect = document.getElementById('editLabelSelect');
+    const editLabelButton = document.getElementById('editLabelButton');
+    const editLabelMenu = document.getElementById('editLabelMenu');
     const CHANNEL_ORDER = ['B1A', 'B1B', 'B2A', 'B2B', 'B3A', 'B3B'];
     const IMAGE_WIDTH = 1200;
 
@@ -139,6 +151,16 @@
 
     function selectedBucOptions() {
       return filteredOptions().filter(item => item.buc === bucInput.value);
+    }
+
+    function closeLabelDropdowns() {
+      editLabelMenu.classList.add('hidden');
+    }
+
+    function setEditLabelValue(value, text) {
+      editLabelSelect.value = value;
+      editLabelButton.textContent = text || '请选择标签';
+      closeLabelDropdowns();
     }
 
     function renderLabelFilter() {
@@ -209,6 +231,17 @@
     function renderAnnotationList() {
       const annotations = state.data?.annotations || [];
       document.getElementById('annotationCount').textContent = annotations.length;
+      annotationJumpSelect.disabled = !annotations.length;
+      annotationJumpSelect.innerHTML = annotations.length
+        ? annotations.map((item, index) => {
+          const label = item.label || `label_id=${item.label_id}`;
+          return `
+            <option value="${item.id}" ${item.id === state.selectedId ? 'selected' : ''}>
+              ${index + 1}. ${escapeHtml(label)} #${item.id}
+            </option>
+          `;
+        }).join('')
+        : '<option value="">暂无标注</option>';
       annotationList.innerHTML = annotations.map(item => {
         const selected = item.id === state.selectedId;
         const label = item.label || `label_id=${item.label_id}`;
@@ -241,6 +274,13 @@
       editLabelSelect.innerHTML = state.labels.map(item => `
         <option value="${item.id}">${escapeHtml(item.label)}</option>
       `).join('');
+      editLabelMenu.innerHTML = state.labels.map(item => `
+        <button type="button" class="label-dropdown-option" data-value="${item.id}" data-text="${escapeHtml(item.label)}">
+          ${escapeHtml(item.label)}
+        </button>
+      `).join('');
+      const first = state.labels[0];
+      setEditLabelValue(first?.id || '', first?.label || '请选择标签');
     }
 
     function renderChannels() {
@@ -378,6 +418,10 @@
       setStatus('图片加载失败', 'bad');
     });
 
+    editLabelButton.addEventListener('click', event => {
+      event.stopPropagation();
+      editLabelMenu.classList.toggle('hidden');
+    });
     labelFilter.addEventListener('change', () => {
       renderOptions();
       const options = selectedBucOptions();
@@ -389,11 +433,21 @@
         funcInput.innerHTML = '';
       }
     });
+    editLabelMenu.addEventListener('click', event => {
+      const option = event.target.closest('.label-dropdown-option');
+      if (!option) return;
+      setEditLabelValue(option.dataset.value || '', option.dataset.text || '请选择标签');
+    });
+    document.addEventListener('click', closeLabelDropdowns);
     bucInput.addEventListener('change', () => {
       renderFuncOptions();
       loadData();
     });
     funcInput.addEventListener('change', loadData);
+    annotationJumpSelect.addEventListener('change', () => {
+      const id = Number(annotationJumpSelect.value);
+      if (id) selectAnnotation(id);
+    });
     imageCanvas.addEventListener('click', event => {
       if (state.editMode) return;
       playSelectedAnnotationAtPointer(event);
