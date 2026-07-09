@@ -18,23 +18,11 @@
         <label>密码 <input id="password" type="password" autocomplete="current-password" value="admin123"></label>
         <button type="submit">登录</button>
       </form>
-      <div class="demo-row">
-        <button class="secondary" type="button" data-name="admin" data-password="admin123">管理员</button>
-        <button class="secondary" type="button" data-name="editor_01" data-password="editor123">编辑者</button>
-        <button class="secondary" type="button" data-name="viewer_01" data-password="viewer123">观察者</button>
-      </div>
       <div class="status" id="status">时间和操作记录均使用北京时间。</div>
     </section>
   </main>
   <script src="/static/common.js"></script>
   <script>
-    document.querySelectorAll('[data-name]').forEach(button => {
-      button.addEventListener('click', () => {
-        document.getElementById('name').value = button.dataset.name;
-        document.getElementById('password').value = button.dataset.password;
-      });
-    });
-
     document.getElementById('loginForm').addEventListener('submit', async event => {
       event.preventDefault();
       const status = document.getElementById('status');
