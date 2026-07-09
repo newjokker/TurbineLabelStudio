@@ -1,11 +1,36 @@
 # -*- coding: utf-8 -*-
 """本地 label 表：标签信息。"""
+import colorsys
 import logging
+import random
 
 from sqlalchemy import Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.exc import SQLAlchemyError
 
 from dao.database import Base, Session, beijing_now, format_beijing_time, json_text, json_value
+
+
+def random_label_color():
+    """生成适合声谱图背景的标签色：避开红色和过暗颜色。"""
+    hue = random.choice((
+        random.uniform(25, 75),
+        random.uniform(90, 175),
+        random.uniform(195, 315),
+    )) / 360
+    saturation = random.uniform(0.68, 0.9)
+    lightness = random.uniform(0.52, 0.68)
+    red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
+    return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
+
+
+def ensure_label_color(extra_info):
+    """如果 extra_info 没有指定颜色，就补一个安全随机色。"""
+    extra = json_value(extra_info)
+    if not isinstance(extra, dict):
+        extra = {}
+    if not extra.get("color"):
+        extra["color"] = random_label_color()
+    return extra
 
 
 class Label(Base):
@@ -47,7 +72,7 @@ def add_label(label, des=None, update_by=None, extra_info=None):
             label=label,
             des=des,
             update_by=update_by,
-            extra_info=json_text(extra_info),
+            extra_info=json_text(ensure_label_color(extra_info)),
         )
         session.add(record)
         session.commit()

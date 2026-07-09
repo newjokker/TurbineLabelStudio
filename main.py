@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from dao import annotation, label, operation_log, user_account, wav_buc  # noqa: F401
 from dao.annotation import Annotation
 from dao.database import Session, beijing_now, create_all_tables, json_text, json_value
-from dao.label import Label
+from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
 from dao.wav_buc import WAV_POSITION_ORDER, WavBuc
@@ -244,7 +244,7 @@ def create_label(payload: LabelPayload, x_user_id: Optional[str] = Header(None, 
             label=payload.label,
             des=payload.des,
             update_by=actor.name,
-            extra_info=json_text(payload.extra_info),
+            extra_info=json_text(ensure_label_color(payload.extra_info)),
         )
         session.add(record)
         session.flush()
@@ -275,7 +275,7 @@ def update_label(label_id: int, payload: LabelPayload, x_user_id: Optional[str] 
         record.label = payload.label
         record.des = payload.des
         record.update_by = actor.name
-        record.extra_info = json_text(payload.extra_info)
+        record.extra_info = json_text(ensure_label_color(payload.extra_info))
         record.update_time = beijing_now()
         session.flush()
         _log(session, actor.id, "update", "label", {"before": before, "after": record.to_dict()})
