@@ -134,3 +134,9 @@ def add_annotation(
         return None
     finally:
         session.close()
+
+def get_ana_by_buc_func(buc, func_name):
+    """根据 buc + func_name 找到所有的标注信息"""
+    pass
+
+

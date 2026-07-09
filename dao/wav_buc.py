@@ -152,3 +152,8 @@ def get_format_wave_md5_info_by_buc(buc):
         return None
     finally:
         session.close()
+
+
+def get_all_buc_list():
+    # 获取所有的 buc 所在的列表
+    pass
