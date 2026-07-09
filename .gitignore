@@ -58,3 +58,7 @@ runtime_status.json
 search_result.csv
 test_mel.jpg
 image_sizes.csv
+
+*.jpg
+
+

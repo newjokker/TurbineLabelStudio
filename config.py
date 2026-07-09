@@ -2,17 +2,14 @@
 
 import os
 
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 TURBINE_LABEL_DATA_DIR = "./logs"
 
 LOCAL_LABEL_STUDIO_DB = os.path.join(TURBINE_LABEL_DATA_DIR, "label_studio.db")
 
-LABEL_STUDIO_BACKUP_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "backup")
+LABEL_STUDIO_BACKUP_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "sql_backup")
 
 # 存放缓存文件
-CACHE_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "temp")
+CACHE_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "cache")
 
 # wav 的缓存 md5.wav
 WAV_CACHE_DIR = os.path.join(CACHE_DIR, "wav")

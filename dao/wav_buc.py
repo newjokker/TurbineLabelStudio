@@ -8,6 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from dao.database import Base, Session
 
 
+WAV_POSITION_ORDER = ["B1A", "B1B", "B2A", "B2B", "B3A", "B3B"]
+
+
 class WavBuc(Base):
     """WAV MD5 与 BUC 映射表。"""
 
@@ -132,32 +135,20 @@ def get_wave_md5_info_by_buc(buc):
 
 
 def get_format_wave_md5_info_by_buc(buc):
-    """根据 BUC 获取 WAV MD5 列表。"""
+    """根据 BUC 获取按 B1A/B1B/B2A/B2B/B3A/B3B 排序的 WAV MD5 列表。"""
     session = Session()
     try:
-        records = session.query(WavBuc.wave_md5, WavBuc.position_id).filter_by(buc=buc).order_by(WavBuc.wave_md5).all()
-        info = [{record.position_id, record.wave_md5} for record in records]
-        res = []
-        if "B1A" in info:
-            res.append(info["B1A"])
-        if "B1B" in info:
-            res.append(info["B1B"])
-        if "B2A" in info:
-            res.append(info["B2A"])
-        if "B2B" in info:
-            res.append(info["B2B"])
-        if "B3A" in info:
-            res.append(info["B3A"])
-        if "B3B" in info:
-            res.append(info["B3B"])
-    
-        if len(res) == 6:
+        records = session.query(WavBuc.wave_md5, WavBuc.position_id).filter_by(buc=buc).all()
+        position_md5 = {record.position_id: record.wave_md5 for record in records}
+        res = [position_md5.get(position_id) for position_id in WAV_POSITION_ORDER]
+
+        if all(res):
             return res
-        else:
-            return None
-    
+
+        logging.error("根据 BUC 查询 WAV MD5 列表失败，缺少必要位置 buc=%s position_md5=%s", buc, position_md5)
+        return None
     except SQLAlchemyError:
         logging.exception("根据 BUC 查询 WAV MD5 列表失败 buc=%s", buc)
-        return []
+        return None
     finally:
         session.close()
