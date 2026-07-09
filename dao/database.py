@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import QueuePool
 

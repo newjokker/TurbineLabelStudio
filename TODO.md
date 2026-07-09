@@ -17,7 +17,9 @@
 
 #### 主表
 
-* id(长整型), uc(string), x1(float), y1(float), x2(float), y2(float), label_id(int), difficult(bool), update_time(UTC), update_ID, update_reason(string), extra_info(JSON)  
+* id(长整型), buc(string), func(string), x1(float), y1(float), x2(float), y2(float), label_id(int), difficult(bool), update_time(UTC), update_ID, update_reason(string), extra_info(JSON)  
+
+* buc + func 能唯一确定一个图片，而不需要单独再去给图片编号
 
 * uc, x1, y1, x2, y2, label, update_time, update_ID, update_reason 不能为空 
 
@@ -37,6 +39,8 @@
     * buc 需要在 wav_buc 表中存在
     * func 不能为空
     * uc 需要在符合 uc 的定义
+
+* 这边的 uc 非图像中的 uc，这个 uc 是 iuc, 应该使用 buc + func 进行编号，其实不用这个 uc 也行，直接记录 func + buc 
 
 #### 标签表
 
