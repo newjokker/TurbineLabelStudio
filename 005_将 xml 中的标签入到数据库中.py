@@ -47,11 +47,11 @@ for each in FileOperationUtil.re_all_file("/Volumes/Jokker/Code/TurbineLabelStud
             
             for obj in a:
                 
-                label_info = get_label_info_by_label(obj.label)
+                label_info = get_label_info_by_label(obj.tag)
                 
                 if label_info is not None:
                     label_id = label_info["id"]
-                    add_annotation(buc=buc, func="wh_jzp_before_20260708", x1=obj.x1, x2=obj.x2, y1=obj.y1, y2=obj.y2, label_id=0, update_id=1, difficult=False, extra_info=None)
+                    add_annotation(buc=buc, func="wh_jzp_before_20260708", x1=obj.x1, x2=obj.x2, y1=obj.y1, y2=obj.y2, label_id=label_id, update_id=1, difficult=False, extra_info=None)
                 else:
                     print(f"label 未注册:{obj.tag}")
 
