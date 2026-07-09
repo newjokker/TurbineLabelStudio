@@ -88,6 +88,49 @@
 
 * buc + fuc + uc 入库到 图像表中
 
-* 
+### 缓存管理
+
+* wav 的缓存，目录：config.py 的 WAV_CACHE_DIR
+* img 的缓存，目录：config.py 的 IMG_CACHE_DIR
+* 给一个 wav 的 md5 在缓存中找到这个文件并返回对应的 path，如果没找到这个文件使用方法去下载
+```python
+def load_wav_by_md5(md5, save_dir):
+    file_type = ".wav"
+    url = "http://192.168.3.69:11402/file/download/" + md5 + file_type
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        with open(os.path.join(save_dir, f"{md5}.wav"), "wb") as f:
+            f.write(resp.content)
+        return True
+    else:
+        return False
+```
+* 下载后的 wav 存储方案，全部存储在 WAV_CACHE_DIR 文件夹下，命名就是 md5.wav
+
+* 给一个 buc 和 func_name 返回对应的图片地址，要是没有找到这个图片的话 直接生成一个
+
+* 生成 img 的方法 引用 /Volumes/Jokker/Code/TurbineLabelStudio/scripts/buc_func_util.py
+
+```python
+from dao.wav_buc import get_format_wave_md5_info_by_buc
+from scripts.buc_func_util import get_buc_image_by_func
+
+
+buc = "BUC_000086"
+
+func_name = "wh_jzp_before_20260708"
+
+md5_list = get_format_wave_md5_info_by_buc(buc=buc)
+
+# 将 md5 找到对应的图片路径
+wav_files = md5_list
+
+res = get_buc_image_by_func(wav_files, func_name=func_name, save_path=f"{buc}_{func_name}.jpg")
+
+```
+
+* img 的命名方式为 f"func_name/{buc}_{func_name}.jpg" 
+
+
 
 
