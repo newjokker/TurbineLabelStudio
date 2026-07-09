@@ -40,6 +40,10 @@
             <div class="channel-button-list" id="channelButtonList"></div>
           </div>
         </div>
+        <section class="buc-rail" aria-label="BUC 列表">
+          <div class="buc-rail-title">BUC</div>
+          <div class="buc-list" id="bucList"></div>
+        </section>
         <audio id="activeAudio" preload="metadata"></audio>
       </section>
 
@@ -48,9 +52,7 @@
           <label>标签
             <select id="labelFilter"></select>
           </label>
-          <label>BUC
-            <select id="bucInput"></select>
-          </label>
+          <select id="bucInput" class="hidden" aria-hidden="true" tabindex="-1"></select>
           <label>方法
             <select id="funcInput"></select>
           </label>
@@ -107,6 +109,7 @@
     const statusEl = document.getElementById('status');
     const labelFilter = document.getElementById('labelFilter');
     const bucInput = document.getElementById('bucInput');
+    const bucList = document.getElementById('bucList');
     const funcInput = document.getElementById('funcInput');
     const targetImage = document.getElementById('targetImage');
     const imageCanvas = document.getElementById('imageCanvas');
@@ -188,6 +191,33 @@
       `).join('');
       if (bucs.includes(previousBuc)) bucInput.value = previousBuc;
       renderFuncOptions();
+      renderBucList();
+    }
+
+    function renderBucList() {
+      const bucs = [...new Set(filteredOptions().map(item => item.buc))];
+      const current = bucInput.value;
+      bucList.innerHTML = bucs.map(buc => `
+        <button
+          class="buc-list-item ${buc === current ? 'active' : ''}"
+          type="button"
+          data-buc="${escapeHtml(buc)}"
+        >${escapeHtml(buc)}</button>
+      `).join('') || '<div class="empty-list">暂无 BUC</div>';
+      bucList.querySelectorAll('.buc-list-item').forEach(node => {
+        node.addEventListener('click', () => switchBuc(node.dataset.buc));
+      });
+    }
+
+    function switchBuc(buc) {
+      if (!buc || bucInput.value === buc) {
+        renderBucList();
+        return;
+      }
+      bucInput.value = buc;
+      renderFuncOptions();
+      renderBucList();
+      loadData();
     }
 
     function renderFuncOptions() {
@@ -402,6 +432,7 @@
         : (current + delta + bucs.length) % bucs.length;
       bucInput.value = bucs[nextIndex];
       renderFuncOptions();
+      renderBucList();
       loadData();
     }
 
@@ -431,6 +462,7 @@
       } else {
         bucInput.innerHTML = '';
         funcInput.innerHTML = '';
+        renderBucList();
       }
     });
     editLabelMenu.addEventListener('click', event => {
@@ -441,6 +473,7 @@
     document.addEventListener('click', closeLabelDropdowns);
     bucInput.addEventListener('change', () => {
       renderFuncOptions();
+      renderBucList();
       loadData();
     });
     funcInput.addEventListener('change', loadData);

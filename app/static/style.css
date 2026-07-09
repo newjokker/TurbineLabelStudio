@@ -183,9 +183,13 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   padding: 10px;
   border-radius: 0;
   overflow: auto;
+  display: grid;
+  grid-template-columns: auto minmax(80px, 1fr) 150px;
+  gap: 10px;
+  align-items: start;
 }
 .media-layout {
-  --annotation-view-size: min(1080px, calc(100vh - 68px), calc(100vw - 410px));
+  --annotation-view-size: min(1080px, calc(100vh - 68px), calc(100vw - 650px));
   display: grid;
   grid-template-columns: var(--annotation-view-size) 44px;
   grid-template-rows: auto minmax(0, 1fr);
@@ -309,6 +313,51 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   position: absolute;
   color: var(--muted);
   font-size: 14px;
+}
+.buc-rail {
+  grid-column: 3;
+  min-width: 0;
+  height: calc(100vh - 20px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
+}
+.buc-rail-title {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+.buc-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-auto-rows: min-content;
+  gap: 8px;
+  align-content: start;
+  padding-right: 2px;
+}
+.buc-list-item {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.buc-list-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .viewer-side {
   min-width: 0;
@@ -515,10 +564,17 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   .viewer-shell {
     grid-template-columns: 1fr;
   }
+  .viewer-main-panel {
+    grid-template-columns: 1fr;
+  }
   .media-layout {
     --annotation-view-size: min(720px, calc(100vw - 32px));
     grid-template-columns: minmax(0, 1fr);
     justify-content: stretch;
+  }
+  .buc-rail {
+    height: auto;
+    max-height: 220px;
   }
   .audio-progress,
   .image-stage,
