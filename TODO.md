@@ -29,20 +29,7 @@
 
 * 这边不对，应该是 BUC, 一组 wav 的集合，会有一个唯一的 BUC 的编码，直接使用自增(BUC_0000001), buc + func -> 图片 -> 生成 uc 
 
-#### uc_buc
-
-* buc + func -> img_md5 -> uc 
-
-* uc 是主键，func 是方法，使用字符串
-
-* 增加数据的前提：
-    * buc 需要在 wav_buc 表中存在
-    * func 不能为空
-    * uc 需要在符合 uc 的定义
-
-* 这边的 uc 非图像中的 uc，这个 uc 是 iuc, 应该使用 buc + func 进行编号，其实不用这个 uc 也行，直接记录 func + buc 
-
-#### 标签表
+#### label
 
 * id(int), label(string), update_time(UTC), des(string), update_by(string)
 

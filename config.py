@@ -8,6 +8,8 @@ LOCAL_LABEL_STUDIO_DB = os.path.join(TURBINE_LABEL_DATA_DIR, "label_studio.db")
 
 LABEL_STUDIO_BACKUP_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "sql_backup")
 
+os.makedirs(LABEL_STUDIO_BACKUP_DIR, exist_ok=True)
+
 # 存放缓存文件
 CACHE_DIR = os.path.join(TURBINE_LABEL_DATA_DIR, "cache")
 

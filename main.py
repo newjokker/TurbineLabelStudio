@@ -4,17 +4,21 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import func as sql_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from dao import annotation, label, operation_log, uc_buc, user_account, wav_buc  # noqa: F401
-from dao.database import Session, beijing_now, create_all_tables, json_text
+from dao import annotation, label, operation_log, user_account, wav_buc  # noqa: F401
+from dao.annotation import Annotation
+from dao.database import Session, beijing_now, create_all_tables, json_text, json_value
 from dao.label import Label
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
+from dao.wav_buc import WAV_POSITION_ORDER, WavBuc
+from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -162,6 +166,11 @@ def accounts_page():
     return _page("accounts.html")
 
 
+@app.get("/annotation_view.html")
+def annotation_view_page():
+    return _page("annotation_view.html")
+
+
 @app.post("/api/login")
 def login(payload: LoginPayload):
     session = Session()
@@ -288,6 +297,96 @@ def delete_label(label_id: int, x_user_id: Optional[str] = Header(None, alias="X
         raise HTTPException(status_code=400, detail="标签已被标注引用，不能删除") from exc
     finally:
         session.close()
+
+
+@app.get("/api/annotation-view/options")
+def annotation_view_options(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id)
+        rows = (
+            session.query(Annotation.buc, Annotation.func, sql_func.count(Annotation.id).label("count"))
+            .group_by(Annotation.buc, Annotation.func)
+            .order_by(Annotation.buc, Annotation.func)
+            .all()
+        )
+        return {
+            "items": [
+                {
+                    "buc": row.buc,
+                    "func": row.func,
+                    "annotation_count": row.count,
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/annotation-view/data")
+def annotation_view_data(
+    buc: str,
+    func_name: str = Query(..., alias="func"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id)
+        rows = (
+            session.query(Annotation, Label)
+            .outerjoin(Label, Label.id == Annotation.label_id)
+            .filter(Annotation.buc == buc, Annotation.func == func_name)
+            .order_by(Annotation.id)
+            .all()
+        )
+        annotations = []
+        for record, label_record in rows:
+            label_extra = json_value(label_record.extra_info) if label_record else {}
+            annotations.append(
+                {
+                    **record.to_dict(),
+                    "label": label_record.label if label_record else None,
+                    "label_color": label_extra.get("color", "#0f5f8a") if isinstance(label_extra, dict) else "#0f5f8a",
+                }
+            )
+
+        wav_rows = session.query(WavBuc.wave_md5, WavBuc.position_id).filter_by(buc=buc).all()
+        position_md5 = {row.position_id: row.wave_md5 for row in wav_rows}
+        channels = [
+            {
+                "position_id": position_id,
+                "md5": position_md5.get(position_id),
+                "audio_url": f"/api/annotation-view/wav/{position_md5[position_id]}" if position_id in position_md5 else None,
+            }
+            for position_id in WAV_POSITION_ORDER
+        ]
+
+        return {
+            "buc": buc,
+            "func": func_name,
+            "image_url": f"/api/annotation-view/image?buc={buc}&func={func_name}",
+            "annotations": annotations,
+            "channels": channels,
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/annotation-view/image")
+def annotation_view_image(buc: str, func_name: str = Query(..., alias="func")):
+    image_path = get_img_path_by_buc_func(buc, func_name)
+    if not image_path or not os.path.isfile(image_path):
+        raise HTTPException(status_code=404, detail="图片缓存生成失败")
+    return FileResponse(image_path, media_type="image/jpeg")
+
+
+@app.get("/api/annotation-view/wav/{md5}")
+def annotation_view_wav(md5: str):
+    wav_path = get_wav_path_by_md5(md5)
+    if not wav_path or not os.path.isfile(wav_path):
+        raise HTTPException(status_code=404, detail="WAV 缓存获取失败")
+    return FileResponse(wav_path, media_type="audio/wav")
 
 
 @app.get("/api/accounts")

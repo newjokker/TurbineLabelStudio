@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标注展示 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page viewer-page">
+    <section class="panel">
+      <div class="toolbar viewer-toolbar">
+        <div class="viewer-query">
+          <label>BUC
+            <input id="bucInput" list="bucOptions" placeholder="BUC_000001">
+          </label>
+          <label>FUNC
+            <input id="funcInput" list="funcOptions" placeholder="wh_jzp_before_20260708">
+          </label>
+          <button id="loadBtn">加载</button>
+        </div>
+        <span class="status" id="status">加载中...</span>
+      </div>
+      <datalist id="bucOptions"></datalist>
+      <datalist id="funcOptions"></datalist>
+    </section>
+
+    <section class="viewer-shell">
+      <section class="panel viewer-main-panel">
+        <div class="viewer-modebar">
+          <button class="secondary active" data-mode="image" id="imageModeBtn">图片</button>
+          <button class="secondary" data-mode="mel" id="melModeBtn">Mel</button>
+        </div>
+        <div class="image-stage" id="imageStage">
+          <div class="image-canvas" id="imageCanvas">
+            <img id="targetImage" alt="">
+            <svg id="boxLayer"></svg>
+          </div>
+          <div class="empty-state" id="emptyImage">暂无图片</div>
+        </div>
+      </section>
+
+      <aside class="viewer-side">
+        <section class="panel annotation-panel">
+          <div class="side-title">
+            <strong>标注结果</strong>
+            <span id="annotationCount">0</span>
+          </div>
+          <div class="annotation-list" id="annotationList"></div>
+        </section>
+
+        <section class="panel audio-panel">
+          <div class="side-title">
+            <strong>六通道音频</strong>
+            <span id="channelCount">0</span>
+          </div>
+          <div class="channel-list" id="channelList"></div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    renderHeader('annotation_view');
+
+    const state = {
+      options: [],
+      data: null,
+      selectedId: null,
+      mode: 'image',
+      naturalWidth: 0,
+      naturalHeight: 0
+    };
+
+    const statusEl = document.getElementById('status');
+    const bucInput = document.getElementById('bucInput');
+    const funcInput = document.getElementById('funcInput');
+    const targetImage = document.getElementById('targetImage');
+    const imageCanvas = document.getElementById('imageCanvas');
+    const boxLayer = document.getElementById('boxLayer');
+    const emptyImage = document.getElementById('emptyImage');
+    const annotationList = document.getElementById('annotationList');
+    const channelList = document.getElementById('channelList');
+
+    function setStatus(text, type = '') {
+      statusEl.className = `status ${type}`.trim();
+      statusEl.textContent = text;
+    }
+
+    function uniqueValues(items, key) {
+      return [...new Set(items.map(item => item[key]).filter(Boolean))].sort();
+    }
+
+    function renderOptions() {
+      document.getElementById('bucOptions').innerHTML = uniqueValues(state.options, 'buc')
+        .map(value => `<option value="${escapeHtml(value)}"></option>`)
+        .join('');
+      document.getElementById('funcOptions').innerHTML = uniqueValues(state.options, 'func')
+        .map(value => `<option value="${escapeHtml(value)}"></option>`)
+        .join('');
+    }
+
+    function colorFor(item) {
+      return item.label_color || '#0f5f8a';
+    }
+
+    function renderBoxes() {
+      const annotations = state.data?.annotations || [];
+      if (!state.naturalWidth || !state.naturalHeight) return;
+      boxLayer.setAttribute('viewBox', `0 0 ${state.naturalWidth} ${state.naturalHeight}`);
+      if (state.mode === 'mel') {
+        boxLayer.innerHTML = '';
+        return;
+      }
+      boxLayer.innerHTML = annotations.map(item => {
+        const x = Math.min(item.x1, item.x2);
+        const y = Math.min(item.y1, item.y2);
+        const width = Math.abs(item.x2 - item.x1);
+        const height = Math.abs(item.y2 - item.y1);
+        const selected = item.id === state.selectedId;
+        const color = colorFor(item);
+        return `
+          <g class="anno-box ${selected ? 'selected' : ''}" data-id="${item.id}">
+            <rect x="${x}" y="${y}" width="${width}" height="${height}" style="--box:${escapeHtml(color)}"></rect>
+            <text x="${x + 4}" y="${Math.max(y + 16, 16)}" style="--box:${escapeHtml(color)}">${escapeHtml(item.label || item.label_id)}</text>
+          </g>
+        `;
+      }).join('');
+      boxLayer.querySelectorAll('.anno-box').forEach(node => {
+        node.addEventListener('click', () => selectAnnotation(Number(node.dataset.id)));
+      });
+    }
+
+    function renderAnnotationList() {
+      const annotations = state.data?.annotations || [];
+      document.getElementById('annotationCount').textContent = annotations.length;
+      annotationList.innerHTML = annotations.map(item => {
+        const selected = item.id === state.selectedId;
+        const label = item.label || `label_id=${item.label_id}`;
+        return `
+          <button class="annotation-row ${selected ? 'active' : ''}" data-id="${item.id}">
+            <span class="swatch" style="--chip:${escapeHtml(colorFor(item))}"></span>
+            <span>
+              <strong>${escapeHtml(label)}</strong>
+              <small>#${item.id} · ${Math.round(item.x1)},${Math.round(item.y1)} - ${Math.round(item.x2)},${Math.round(item.y2)}</small>
+            </span>
+          </button>
+        `;
+      }).join('') || '<div class="empty-list">暂无标注</div>';
+      annotationList.querySelectorAll('.annotation-row').forEach(node => {
+        node.addEventListener('click', () => selectAnnotation(Number(node.dataset.id)));
+      });
+    }
+
+    function renderChannels() {
+      const channels = state.data?.channels || [];
+      const readyCount = channels.filter(item => item.audio_url).length;
+      document.getElementById('channelCount').textContent = readyCount;
+      channelList.innerHTML = channels.map(item => `
+        <div class="channel-row">
+          <div>
+            <strong>${escapeHtml(item.position_id)}</strong>
+            <small>${escapeHtml(item.md5 || '缺失')}</small>
+          </div>
+          ${item.audio_url ? `<audio controls preload="none" src="${escapeHtml(item.audio_url)}"></audio>` : '<span class="status bad">无音频</span>'}
+        </div>
+      `).join('');
+    }
+
+    function selectAnnotation(id) {
+      state.selectedId = id;
+      renderBoxes();
+      renderAnnotationList();
+      const row = annotationList.querySelector(`[data-id="${id}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    async function loadOptions() {
+      const data = await apiFetch('/api/annotation-view/options');
+      state.options = data.items || [];
+      renderOptions();
+      if (state.options.length && !bucInput.value) {
+        bucInput.value = state.options[0].buc;
+        funcInput.value = state.options[0].func;
+      }
+      setStatus(`可选组合 ${state.options.length} 个`);
+    }
+
+    async function loadData() {
+      const buc = bucInput.value.trim();
+      const funcName = funcInput.value.trim();
+      if (!buc || !funcName) {
+        setStatus('BUC 和 FUNC 不能为空', 'bad');
+        return;
+      }
+      setStatus('加载中...');
+      try {
+        const data = await apiFetch(`/api/annotation-view/data?buc=${encodeURIComponent(buc)}&func=${encodeURIComponent(funcName)}`);
+        state.data = data;
+        state.selectedId = data.annotations[0]?.id || null;
+        state.naturalWidth = 0;
+        state.naturalHeight = 0;
+        targetImage.src = data.image_url;
+        emptyImage.classList.add('hidden');
+        renderAnnotationList();
+        renderChannels();
+        setStatus(`已加载 ${data.buc} / ${data.func}`, 'ok');
+      } catch (error) {
+        setStatus(error.message, 'bad');
+      }
+    }
+
+    targetImage.addEventListener('load', () => {
+      state.naturalWidth = targetImage.naturalWidth;
+      state.naturalHeight = targetImage.naturalHeight;
+      imageCanvas.style.setProperty('--image-aspect', `${state.naturalWidth} / ${state.naturalHeight}`);
+      renderBoxes();
+    });
+
+    targetImage.addEventListener('error', () => {
+      boxLayer.innerHTML = '';
+      emptyImage.classList.remove('hidden');
+      setStatus('图片加载失败', 'bad');
+    });
+
+    document.getElementById('loadBtn').addEventListener('click', loadData);
+    document.getElementById('imageModeBtn').addEventListener('click', () => {
+      state.mode = 'image';
+      document.getElementById('imageModeBtn').classList.add('active');
+      document.getElementById('melModeBtn').classList.remove('active');
+      renderBoxes();
+    });
+    document.getElementById('melModeBtn').addEventListener('click', () => {
+      state.mode = 'mel';
+      document.getElementById('melModeBtn').classList.add('active');
+      document.getElementById('imageModeBtn').classList.remove('active');
+      renderBoxes();
+    });
+
+    loadOptions().then(loadData).catch(error => setStatus(error.message, 'bad'));
+  </script>
+</body>
+</html>

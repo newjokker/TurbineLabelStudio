@@ -167,9 +167,216 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   margin-right: 8px;
 }
 .hidden { display: none !important; }
+.viewer-page {
+  max-width: 1440px;
+}
+.viewer-toolbar {
+  align-items: end;
+}
+.viewer-query {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(220px, 360px) auto;
+  gap: 12px;
+  align-items: end;
+}
+.viewer-shell {
+  min-height: 680px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+}
+.viewer-main-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.viewer-modebar {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.viewer-modebar button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+.viewer-modebar button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.image-stage {
+  position: relative;
+  min-height: 600px;
+  background: #111827;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 12px;
+}
+.image-canvas {
+  position: relative;
+  width: min(100%, calc((100vh - 230px) * var(--image-aspect, 1)));
+  max-height: calc(100vh - 230px);
+  aspect-ratio: var(--image-aspect, 1);
+}
+.image-stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.image-canvas svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+.anno-box {
+  cursor: pointer;
+}
+.anno-box rect {
+  fill: color-mix(in srgb, var(--box) 12%, transparent);
+  stroke: var(--box);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.anno-box text {
+  fill: #fff;
+  stroke: rgba(15, 23, 42, 0.88);
+  stroke-width: 4;
+  paint-order: stroke;
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.anno-box.selected rect {
+  fill: color-mix(in srgb, var(--box) 26%, transparent);
+  stroke-width: 5;
+}
+.empty-state {
+  position: absolute;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+.viewer-side {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(260px, 1fr) auto;
+  gap: 16px;
+}
+.annotation-panel,
+.audio-panel {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.side-title {
+  min-height: 48px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.side-title span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.annotation-list {
+  overflow: auto;
+  max-height: 410px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.annotation-row {
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+}
+.annotation-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.annotation-row span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.annotation-row strong,
+.annotation-row small,
+.channel-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.annotation-row small,
+.channel-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.empty-list {
+  color: var(--muted);
+  padding: 12px;
+  font-size: 14px;
+}
+.channel-list {
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+.channel-row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  background: #fff;
+}
+.channel-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.channel-row audio {
+  width: 100%;
+  height: 34px;
+}
 @media (max-width: 900px) {
   .page { padding: 16px; }
   .grid-links, .form-grid { grid-template-columns: 1fr; }
   .form-grid .wide, .form-grid .full { grid-column: auto; }
   .panel { overflow-x: auto; }
+  .viewer-query,
+  .viewer-shell,
+  .viewer-side {
+    grid-template-columns: 1fr;
+  }
+  .viewer-shell {
+    min-height: auto;
+  }
+  .image-stage {
+    min-height: 420px;
+  }
+  .image-canvas {
+    width: min(100%, calc(70vh * var(--image-aspect, 1)));
+    max-height: 70vh;
+  }
+  .annotation-list {
+    max-height: 300px;
+  }
 }
