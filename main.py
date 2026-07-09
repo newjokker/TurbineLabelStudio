@@ -24,6 +24,7 @@ from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "app")
 STATIC_DIR = os.path.join(APP_DIR, "static")
+DEFAULT_FUNC_NAMES = ["wh_jzp_before_20260708"]
 
 app = FastAPI(title="TurbineLabelStudio")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -38,6 +39,19 @@ class LabelPayload(BaseModel):
     label: str
     des: Optional[str] = None
     update_by: Optional[str] = None
+    extra_info: Optional[Dict[str, Any]] = None
+
+
+class AnnotationPayload(BaseModel):
+    buc: str
+    func: str
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    label_id: int
+    difficult: bool = False
+    update_reason: Optional[str] = None
     extra_info: Optional[Dict[str, Any]] = None
 
 
@@ -310,6 +324,7 @@ def annotation_view_options(x_user_id: Optional[str] = Header(None, alias="X-Use
             .order_by(Annotation.buc, Annotation.func)
             .all()
         )
+        counts_by_key = {(row.buc, row.func): row.count for row in rows}
         label_rows = (
             session.query(Annotation.buc, Annotation.func, Label.id, Label.label)
             .join(Label, Label.id == Annotation.label_id)
@@ -325,15 +340,18 @@ def annotation_view_options(x_user_id: Optional[str] = Header(None, alias="X-Use
                     "label": row.label,
                 }
             )
+        buc_rows = session.query(WavBuc.buc).distinct().order_by(WavBuc.buc).all()
+        option_keys = {(row.buc, func_name) for row in buc_rows for func_name in DEFAULT_FUNC_NAMES}
+        option_keys.update(counts_by_key.keys())
         return {
             "items": [
                 {
-                    "buc": row.buc,
-                    "func": row.func,
-                    "annotation_count": row.count,
-                    "labels": labels_by_key.get((row.buc, row.func), []),
+                    "buc": buc,
+                    "func": func_name,
+                    "annotation_count": counts_by_key.get((buc, func_name), 0),
+                    "labels": labels_by_key.get((buc, func_name), []),
                 }
-                for row in rows
+                for buc, func_name in sorted(option_keys)
             ]
         }
     finally:
@@ -403,6 +421,63 @@ def annotation_view_wav(md5: str):
     if not wav_path or not os.path.isfile(wav_path):
         raise HTTPException(status_code=404, detail="WAV 缓存获取失败")
     return FileResponse(wav_path, media_type="audio/wav")
+
+
+@app.post("/api/annotations")
+def create_annotation(payload: AnnotationPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id)
+        _require(actor, "label_write")
+        if not session.query(WavBuc.buc).filter_by(buc=payload.buc).first():
+            raise HTTPException(status_code=400, detail="BUC 不存在")
+        if not session.query(Label.id).filter_by(id=payload.label_id).first():
+            raise HTTPException(status_code=400, detail="标签不存在")
+        record = Annotation(
+            buc=payload.buc,
+            func=payload.func,
+            x1=payload.x1,
+            y1=payload.y1,
+            x2=payload.x2,
+            y2=payload.y2,
+            label_id=payload.label_id,
+            difficult=payload.difficult,
+            update_id=actor.id,
+            update_reason=payload.update_reason,
+            extra_info=json_text(payload.extra_info),
+        )
+        session.add(record)
+        session.flush()
+        _log(session, actor.id, "create", "annotation", record.to_dict())
+        session.commit()
+        session.refresh(record)
+        return {"item": record.to_dict()}
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="创建标注失败") from exc
+    finally:
+        session.close()
+
+
+@app.delete("/api/annotations/{annotation_id}")
+def delete_annotation(annotation_id: int, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id)
+        _require(actor, "label_write")
+        record = session.query(Annotation).filter_by(id=annotation_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="标注不存在")
+        before = record.to_dict()
+        session.delete(record)
+        _log(session, actor.id, "delete", "annotation", before)
+        session.commit()
+        return {"ok": True}
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="删除标注失败") from exc
+    finally:
+        session.close()
 
 
 @app.get("/api/accounts")

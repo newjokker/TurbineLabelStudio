@@ -293,6 +293,15 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   stroke: #ff0000;
   stroke-width: 2;
 }
+.draft-box rect {
+  fill: rgba(15, 95, 138, 0.14);
+  stroke: var(--accent);
+  stroke-dasharray: 6 4;
+  stroke-width: 2;
+}
+.image-canvas.editing {
+  cursor: crosshair;
+}
 .empty-state {
   position: absolute;
   color: var(--muted);
@@ -309,6 +318,23 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   padding: 10px;
   display: grid;
   gap: 8px;
+}
+.edit-mode-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.edit-mode-toolbar button {
+  min-width: 0;
+  padding: 0 10px;
+}
+.edit-panel {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfd;
 }
 .annotation-panel {
   min-width: 0;

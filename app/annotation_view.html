@@ -51,6 +51,18 @@
           <label>BUC
             <select id="bucInput"></select>
           </label>
+          <label>方法
+            <select id="funcInput"></select>
+          </label>
+          <div class="edit-mode-toolbar">
+            <button class="secondary" id="editModeBtn" type="button">进入编辑模式</button>
+            <button class="danger hidden" id="deleteAnnotationBtn" type="button" disabled>删除选中标注</button>
+          </div>
+          <div class="edit-panel hidden" id="editPanel">
+            <label>新增标签
+              <select id="editLabelSelect"></select>
+            </label>
+          </div>
           <span class="status hidden" id="status"></span>
         </section>
         <section class="panel annotation-panel">
@@ -76,12 +88,17 @@
       segmentTimer: null,
       playbackContext: null,
       playbackSourceNode: null,
-      playbackGainNode: null
+      playbackGainNode: null,
+      labels: [],
+      canEdit: false,
+      editMode: false,
+      drawStart: null
     };
 
     const statusEl = document.getElementById('status');
     const labelFilter = document.getElementById('labelFilter');
     const bucInput = document.getElementById('bucInput');
+    const funcInput = document.getElementById('funcInput');
     const targetImage = document.getElementById('targetImage');
     const imageCanvas = document.getElementById('imageCanvas');
     const boxLayer = document.getElementById('boxLayer');
@@ -94,6 +111,10 @@
     const audioTime = document.getElementById('audioTime');
     const gainInput = document.getElementById('gainInput');
     const playheadLine = document.getElementById('playheadLine');
+    const editModeBtn = document.getElementById('editModeBtn');
+    const deleteAnnotationBtn = document.getElementById('deleteAnnotationBtn');
+    const editPanel = document.getElementById('editPanel');
+    const editLabelSelect = document.getElementById('editLabelSelect');
     const CHANNEL_ORDER = ['B1A', 'B1B', 'B2A', 'B2B', 'B3A', 'B3B'];
     const IMAGE_WIDTH = 1200;
 
@@ -116,6 +137,10 @@
       return state.options.filter(item => optionHasLabel(item, labelFilter.value));
     }
 
+    function selectedBucOptions() {
+      return filteredOptions().filter(item => item.buc === bucInput.value);
+    }
+
     function renderLabelFilter() {
       const labels = [];
       const seen = new Set();
@@ -134,9 +159,22 @@
 
     function renderOptions() {
       const options = filteredOptions();
-      bucInput.innerHTML = options.map((item, index) => `
-        <option value="${index}">${escapeHtml(item.buc)}</option>
+      const bucs = [...new Set(options.map(item => item.buc))];
+      const previousBuc = bucInput.value;
+      bucInput.innerHTML = bucs.map(buc => `
+        <option value="${escapeHtml(buc)}">${escapeHtml(buc)}</option>
       `).join('');
+      if (bucs.includes(previousBuc)) bucInput.value = previousBuc;
+      renderFuncOptions();
+    }
+
+    function renderFuncOptions() {
+      const options = selectedBucOptions();
+      const previousFunc = funcInput.value;
+      funcInput.innerHTML = options.map(item => `
+        <option value="${escapeHtml(item.func)}">${escapeHtml(item.func)}</option>
+      `).join('');
+      if (options.some(item => item.func === previousFunc)) funcInput.value = previousFunc;
     }
 
     function colorFor(item) {
@@ -159,6 +197,7 @@
           </g>
         `;
       }).join('');
+      renderDraftBox();
       boxLayer.querySelectorAll('.anno-box').forEach(node => {
         node.addEventListener('click', event => {
           event.stopPropagation();
@@ -186,6 +225,22 @@
       annotationList.querySelectorAll('.annotation-row').forEach(node => {
         node.addEventListener('click', () => selectAnnotation(Number(node.dataset.id)));
       });
+      deleteAnnotationBtn.disabled = !state.editMode || !state.selectedId;
+    }
+
+    function renderEditControls() {
+      editModeBtn.textContent = state.editMode ? '退出编辑模式' : '进入编辑模式';
+      editModeBtn.classList.toggle('secondary', !state.editMode);
+      editPanel.classList.toggle('hidden', !state.editMode);
+      deleteAnnotationBtn.classList.toggle('hidden', !state.editMode);
+      deleteAnnotationBtn.disabled = !state.editMode || !state.selectedId;
+      imageCanvas.classList.toggle('editing', state.editMode);
+    }
+
+    function renderEditLabelSelect() {
+      editLabelSelect.innerHTML = state.labels.map(item => `
+        <option value="${item.id}">${escapeHtml(item.label)}</option>
+      `).join('');
     }
 
     function renderChannels() {
@@ -250,14 +305,26 @@
       state.options = data.items || [];
       renderLabelFilter();
       renderOptions();
-      const options = filteredOptions();
-      if (options.length) bucInput.value = '0';
+      const options = selectedBucOptions();
+      if (options.length) funcInput.value = options[0].func;
       clearStatus();
     }
 
+    async function loadPermissions() {
+      const data = await apiFetch('/api/permissions');
+      setUser(data.user, data.permissions);
+      state.canEdit = !!data.permissions?.label_write;
+      renderEditControls();
+    }
+
+    async function loadLabelsForEdit() {
+      const data = await apiFetch('/api/labels');
+      state.labels = data.items || [];
+      renderEditLabelSelect();
+    }
+
     function selectedOption() {
-      const options = filteredOptions();
-      return options[Number(bucInput.value)] || null;
+      return selectedBucOptions().find(item => item.func === funcInput.value) || null;
     }
 
     async function loadData() {
@@ -279,6 +346,7 @@
         emptyImage.classList.add('hidden');
         renderAnnotationList();
         renderChannels();
+        renderEditControls();
         clearStatus();
       } catch (error) {
         setStatus(error.message, 'bad');
@@ -286,13 +354,14 @@
     }
 
     function moveOption(delta) {
-      const options = filteredOptions();
-      if (!options.length) return;
-      const current = Number(bucInput.value);
+      const bucs = [...new Set(filteredOptions().map(item => item.buc))];
+      if (!bucs.length) return;
+      const current = bucs.indexOf(bucInput.value);
       const nextIndex = current < 0
-        ? (delta > 0 ? 0 : options.length - 1)
-        : (current + delta + options.length) % options.length;
-      bucInput.value = String(nextIndex);
+        ? (delta > 0 ? 0 : bucs.length - 1)
+        : (current + delta + bucs.length) % bucs.length;
+      bucInput.value = bucs[nextIndex];
+      renderFuncOptions();
       loadData();
     }
 
@@ -311,16 +380,24 @@
 
     labelFilter.addEventListener('change', () => {
       renderOptions();
-      const options = filteredOptions();
+      const options = selectedBucOptions();
       if (options.length) {
-        bucInput.value = '0';
+        funcInput.value = options[0].func;
         loadData();
       } else {
         bucInput.innerHTML = '';
+        funcInput.innerHTML = '';
       }
     });
-    bucInput.addEventListener('change', loadData);
-    imageCanvas.addEventListener('click', playSelectedAnnotationAtPointer);
+    bucInput.addEventListener('change', () => {
+      renderFuncOptions();
+      loadData();
+    });
+    funcInput.addEventListener('change', loadData);
+    imageCanvas.addEventListener('click', event => {
+      if (state.editMode) return;
+      playSelectedAnnotationAtPointer(event);
+    });
     document.addEventListener('keydown', event => {
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
@@ -332,6 +409,128 @@
         event.preventDefault();
         moveOption(1);
       }
+    });
+
+    function pointFromEvent(event) {
+      const rect = boxLayer.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width * IMAGE_WIDTH;
+      const y = (event.clientY - rect.top) / rect.height * IMAGE_WIDTH;
+      return {
+        x: Math.max(0, Math.min(IMAGE_WIDTH, x)),
+        y: Math.max(0, Math.min(IMAGE_WIDTH, y))
+      };
+    }
+
+    function draftRect() {
+      if (!state.drawStart?.current) return null;
+      const { start, current } = state.drawStart;
+      const x1 = Math.min(start.x, current.x);
+      const y1 = Math.min(start.y, current.y);
+      const x2 = Math.max(start.x, current.x);
+      const y2 = Math.max(start.y, current.y);
+      return { x1, y1, x2, y2, width: x2 - x1, height: y2 - y1 };
+    }
+
+    function renderDraftBox() {
+      const rect = draftRect();
+      if (!rect) return;
+      boxLayer.insertAdjacentHTML('beforeend', `
+        <g class="anno-box draft-box">
+          <rect x="${rect.x1}" y="${rect.y1}" width="${rect.width}" height="${rect.height}"></rect>
+        </g>
+      `);
+    }
+
+    async function createAnnotationFromDraft() {
+      const option = selectedOption();
+      const rect = draftRect();
+      const labelId = Number(editLabelSelect.value);
+      state.drawStart = null;
+      renderBoxes();
+      if (!option || !rect || !labelId) return;
+      if (rect.width < 4 || rect.height < 4) return;
+      try {
+        await apiFetch('/api/annotations', {
+          method: 'POST',
+          body: JSON.stringify({
+            buc: option.buc,
+            func: option.func,
+            x1: Math.round(rect.x1),
+            y1: Math.round(rect.y1),
+            x2: Math.round(rect.x2),
+            y2: Math.round(rect.y2),
+            label_id: labelId
+          })
+        });
+        await loadData();
+        setStatus('新增标注成功', 'ok');
+      } catch (error) {
+        setStatus(error.message, 'bad');
+      }
+    }
+
+    editModeBtn.addEventListener('click', async () => {
+      if (!state.editMode) {
+        try {
+          await loadPermissions();
+          if (!state.canEdit) {
+            setStatus('当前角色没有权限', 'bad');
+            return;
+          }
+          if (!state.labels.length) await loadLabelsForEdit();
+          state.editMode = true;
+          clearStatus();
+        } catch (error) {
+          setStatus(error.message, 'bad');
+          return;
+        }
+      } else {
+        state.editMode = false;
+        state.drawStart = null;
+        renderBoxes();
+      }
+      renderEditControls();
+    });
+
+    deleteAnnotationBtn.addEventListener('click', async () => {
+      if (!state.editMode || !state.selectedId) return;
+      if (!confirm('确认删除选中的标注？')) return;
+      try {
+        await apiFetch(`/api/annotations/${state.selectedId}`, { method: 'DELETE' });
+        state.selectedId = null;
+        await loadData();
+        setStatus('删除标注成功', 'ok');
+      } catch (error) {
+        setStatus(error.message, 'bad');
+      }
+    });
+
+    boxLayer.addEventListener('pointerdown', event => {
+      if (!state.editMode || !state.canEdit || !editLabelSelect.value) return;
+      if (event.target.closest('.anno-box')) return;
+      event.preventDefault();
+      const point = pointFromEvent(event);
+      state.drawStart = { start: point, current: point };
+      boxLayer.setPointerCapture(event.pointerId);
+      renderBoxes();
+    });
+
+    boxLayer.addEventListener('pointermove', event => {
+      if (!state.drawStart) return;
+      state.drawStart.current = pointFromEvent(event);
+      renderBoxes();
+    });
+
+    boxLayer.addEventListener('pointerup', async event => {
+      if (!state.drawStart) return;
+      state.drawStart.current = pointFromEvent(event);
+      boxLayer.releasePointerCapture(event.pointerId);
+      await createAnnotationFromDraft();
+    });
+
+    boxLayer.addEventListener('pointercancel', () => {
+      state.drawStart = null;
+      renderBoxes();
     });
 
     function formatTime(seconds) {
@@ -528,7 +727,9 @@
     });
     gainInput.addEventListener('change', updatePlaybackGain);
 
-    loadOptions().then(loadData).catch(error => setStatus(error.message, 'bad'));
+    Promise.all([loadPermissions(), loadOptions()])
+      .then(loadData)
+      .catch(error => setStatus(error.message, 'bad'));
   </script>
 </body>
 </html>

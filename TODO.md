@@ -124,6 +124,14 @@ res = get_buc_image_by_func(wav_files, func_name=func_name, save_path=f"{buc}_{f
 
 * 可以输出格式化的数据，六条 wav 文件放在一个文件夹中，文件夹的文件名是 buc，然后这个文件夹中还存放 xml 还有对应的 img 图片，xml 和 img 的名字一样，后缀不一样，都是 buc + func
 
+### 数据入库的方案
+
+* 一个函数，输入 6 个 md5, 和对应的 position_id 参考 /Volumes/Jokker/Code/TurbineLabelStudio/003_填充wav_buc表.py
+
+* 或者指定一个 md5，页面中找到相同的传感器中对应时间的 6 个文件，手动确定进行入库
+
+* 
+
 ### 项目存在的问题
 
 * 虽然找到了 6 个 wav 文件，但是文件得到 mel 的流程还未精确还原，我得到的 mel 图和训练的图有少许差别
