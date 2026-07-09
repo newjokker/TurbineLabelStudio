@@ -58,6 +58,9 @@ header {
 }
 .topbar h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
 .nav { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.nav a:not([href="/index.html"]) {
+  display: none;
+}
 .nav a, .role-badge {
   min-height: 32px;
   display: inline-flex;
@@ -168,12 +171,13 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 }
 .hidden { display: none !important; }
 .viewer-page {
+  --viewer-content-height: calc(100vh - 70px);
   max-width: none;
   margin: 0;
   padding: 0;
 }
 .viewer-shell {
-  min-height: 100vh;
+  min-height: var(--viewer-content-height);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 10px;
@@ -189,7 +193,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   align-items: start;
 }
 .media-layout {
-  --annotation-view-size: min(1080px, calc(100vh - 68px), calc(100vw - 650px));
+  --annotation-view-size: min(1080px, calc(var(--viewer-content-height) - 68px), calc(100vw - 650px));
   display: grid;
   grid-template-columns: var(--annotation-view-size) 44px;
   grid-template-rows: auto minmax(0, 1fr);
@@ -317,7 +321,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 .buc-rail {
   grid-column: 3;
   min-width: 0;
-  height: calc(100vh - 20px);
+  height: calc(var(--viewer-content-height) - 20px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   align-self: start;
@@ -362,7 +366,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 .viewer-side {
   min-width: 0;
   min-height: 0;
-  height: calc(100vh - 20px);
+  height: calc(var(--viewer-content-height) - 20px);
   align-self: start;
   position: sticky;
   top: 10px;

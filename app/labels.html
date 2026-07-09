@@ -41,7 +41,8 @@
   <script>
     const user = requireLogin();
     let labels = [];
-    renderHeader('labels');
+    renderHeader('labels', { showActions: false });
+    document.querySelector('#siteHeader .nav')?.remove();
     renderPermissionText(document.getElementById('permissionText'));
 
     function canWrite() { return !!getPermissions().label_write; }

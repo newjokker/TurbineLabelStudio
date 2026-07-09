@@ -52,19 +52,18 @@ function escapeHtml(value) {
   }[char]));
 }
 
-function renderHeader(active) {
+function renderHeader(active, options = {}) {
   const user = getUser();
+  const showActions = options.showActions !== false;
   document.getElementById('siteHeader').innerHTML = `
     <div class="topbar">
       <h1>TurbineLabelStudio</h1>
-      <nav class="nav">
-        <a href="/index.html" class="${active === 'index' ? 'active' : ''}">首页</a>
-        <a href="/annotation_view.html" class="${active === 'annotation_view' ? 'active' : ''}">标注展示</a>
-        <a href="/label_view.html" class="${active === 'label_view' ? 'active' : ''}">标签查看</a>
-        <a href="/labels.html" class="${active === 'labels' ? 'active' : ''}">标签管理</a>
-        <a href="/accounts.html" class="${active === 'accounts' ? 'active' : ''}">账号管理</a>
-        ${user ? `<span class="role-badge">${escapeHtml(user.alias || user.name)} / ${escapeHtml(user.role)}</span><button class="secondary" onclick="logout()">退出</button>` : '<a href="/login.html">登录</a>'}
-      </nav>
+      ${showActions ? `
+        <nav class="nav">
+          <a href="/index.html" class="home-link ${active === 'index' ? 'active' : ''}">回到首页</a>
+          ${user ? `<span class="role-badge">${escapeHtml(user.alias || user.name)} / ${escapeHtml(user.role)}</span><button class="secondary" onclick="logout()">退出</button>` : '<a href="/login.html">登录</a>'}
+        </nav>
+      ` : ''}
     </div>
   `;
 }

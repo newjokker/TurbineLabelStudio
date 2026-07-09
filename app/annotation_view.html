@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+  <header id="siteHeader"></header>
   <main class="page viewer-page">
     <section class="viewer-shell">
       <section class="panel viewer-main-panel">
@@ -90,6 +91,7 @@
   <script src="/static/common.js"></script>
   <script>
     requireLogin();
+    renderHeader('annotation_view');
 
     const state = {
       options: [],
