@@ -19,17 +19,14 @@
               <select id="gainInput">
                 <option value="0.1">0.1</option>
                 <option value="0.5">0.5</option>
-                <option value="1" selected>1</option>
+                <option value="1">1</option>
                 <option value="5">5</option>
-                <option value="10">10</option>
+                <option value="10" selected>10</option>
                 <option value="20">20</option>
                 <option value="50">50</option>
                 <option value="100">100</option>
               </select>
             </label>
-          </div>
-          <div class="channel-label-panel">
-            <div class="channel-label-list" id="channelList"></div>
           </div>
           <div class="image-stage" id="imageStage">
             <div class="image-canvas" id="imageCanvas">
@@ -39,22 +36,22 @@
             </div>
             <div class="empty-state" id="emptyImage">暂无图片</div>
           </div>
+          <div class="channel-button-panel">
+            <div class="channel-button-list" id="channelButtonList"></div>
+          </div>
         </div>
         <audio id="activeAudio" preload="metadata"></audio>
       </section>
 
       <aside class="viewer-side">
         <section class="panel load-panel">
+          <label>标签
+            <select id="labelFilter"></select>
+          </label>
           <label>BUC
-            <input id="bucInput" list="bucOptions" placeholder="BUC_000001">
+            <select id="bucInput"></select>
           </label>
-          <label>FUNC
-            <input id="funcInput" list="funcOptions" placeholder="wh_jzp_before_20260708">
-          </label>
-          <button id="loadBtn">加载</button>
-          <span class="status" id="status">加载中...</span>
-          <datalist id="bucOptions"></datalist>
-          <datalist id="funcOptions"></datalist>
+          <span class="status hidden" id="status"></span>
         </section>
         <section class="panel annotation-panel">
           <div class="side-title">
@@ -83,14 +80,14 @@
     };
 
     const statusEl = document.getElementById('status');
+    const labelFilter = document.getElementById('labelFilter');
     const bucInput = document.getElementById('bucInput');
-    const funcInput = document.getElementById('funcInput');
     const targetImage = document.getElementById('targetImage');
     const imageCanvas = document.getElementById('imageCanvas');
     const boxLayer = document.getElementById('boxLayer');
     const emptyImage = document.getElementById('emptyImage');
     const annotationList = document.getElementById('annotationList');
-    const channelList = document.getElementById('channelList');
+    const channelButtonList = document.getElementById('channelButtonList');
     const activeAudio = document.getElementById('activeAudio');
     const playBtn = document.getElementById('playBtn');
     const audioProgress = document.getElementById('audioProgress');
@@ -105,17 +102,41 @@
       statusEl.textContent = text;
     }
 
-    function uniqueValues(items, key) {
-      return [...new Set(items.map(item => item[key]).filter(Boolean))].sort();
+    function clearStatus() {
+      statusEl.className = 'status hidden';
+      statusEl.textContent = '';
+    }
+
+    function optionHasLabel(item, labelId) {
+      if (!labelId) return true;
+      return (item.labels || []).some(label => String(label.id) === String(labelId));
+    }
+
+    function filteredOptions() {
+      return state.options.filter(item => optionHasLabel(item, labelFilter.value));
+    }
+
+    function renderLabelFilter() {
+      const labels = [];
+      const seen = new Set();
+      for (const item of state.options) {
+        for (const label of item.labels || []) {
+          if (seen.has(label.id)) continue;
+          seen.add(label.id);
+          labels.push(label);
+        }
+      }
+      labels.sort((a, b) => a.id - b.id);
+      labelFilter.innerHTML = '<option value="">全部标签</option>' + labels
+        .map(label => `<option value="${label.id}">${escapeHtml(label.label)}</option>`)
+        .join('');
     }
 
     function renderOptions() {
-      document.getElementById('bucOptions').innerHTML = uniqueValues(state.options, 'buc')
-        .map(value => `<option value="${escapeHtml(value)}"></option>`)
-        .join('');
-      document.getElementById('funcOptions').innerHTML = uniqueValues(state.options, 'func')
-        .map(value => `<option value="${escapeHtml(value)}"></option>`)
-        .join('');
+      const options = filteredOptions();
+      bucInput.innerHTML = options.map((item, index) => `
+        <option value="${index}">${escapeHtml(item.buc)}</option>
+      `).join('');
     }
 
     function colorFor(item) {
@@ -172,11 +193,16 @@
       if (!state.selectedChannel || !channels.some(item => item.position_id === state.selectedChannel && item.audio_url)) {
         state.selectedChannel = channels.find(item => item.audio_url)?.position_id || null;
       }
-      channelList.innerHTML = channels.map(item => `
-        <div class="channel-label ${item.position_id === state.selectedChannel ? 'active' : ''} ${item.audio_url ? '' : 'disabled'}">
-          ${escapeHtml(item.position_id)}
-        </div>
+      channelButtonList.innerHTML = channels.map(item => `
+        <button
+          class="channel-button ${item.position_id === state.selectedChannel ? 'active' : ''}"
+          data-position="${escapeHtml(item.position_id)}"
+          ${item.audio_url ? '' : 'disabled'}
+        >${escapeHtml(item.position_id)}</button>
       `).join('');
+      channelButtonList.querySelectorAll('.channel-button').forEach(node => {
+        node.addEventListener('click', () => playSelectedAnnotationByChannel(node.dataset.position));
+      });
       loadSelectedAudio();
     }
 
@@ -190,8 +216,8 @@
     }
 
     function markSelectedChannel() {
-      channelList.querySelectorAll('.channel-label').forEach(row => {
-        row.classList.toggle('active', row.textContent.trim() === state.selectedChannel);
+      channelButtonList.querySelectorAll('.channel-button').forEach(row => {
+        row.classList.toggle('active', row.dataset.position === state.selectedChannel);
       });
     }
 
@@ -207,6 +233,11 @@
     function playSelectedAnnotationAtPointer(event) {
       if (!state.selectedId) return;
       const channel = channelFromPointer(event);
+      playSelectedAnnotationByChannel(channel);
+    }
+
+    function playSelectedAnnotationByChannel(channel) {
+      if (!state.selectedId) return;
       if (!channel || !(state.data?.channels || []).some(item => item.position_id === channel && item.audio_url)) return;
       state.selectedChannel = channel;
       markSelectedChannel();
@@ -217,22 +248,27 @@
     async function loadOptions() {
       const data = await apiFetch('/api/annotation-view/options');
       state.options = data.items || [];
+      renderLabelFilter();
       renderOptions();
-      if (state.options.length && !bucInput.value) {
-        bucInput.value = state.options[0].buc;
-        funcInput.value = state.options[0].func;
-      }
-      setStatus(`可选组合 ${state.options.length} 个`);
+      const options = filteredOptions();
+      if (options.length) bucInput.value = '0';
+      clearStatus();
+    }
+
+    function selectedOption() {
+      const options = filteredOptions();
+      return options[Number(bucInput.value)] || null;
     }
 
     async function loadData() {
-      const buc = bucInput.value.trim();
-      const funcName = funcInput.value.trim();
+      const option = selectedOption();
+      const buc = option?.buc;
+      const funcName = option?.func;
       if (!buc || !funcName) {
-        setStatus('BUC 和 FUNC 不能为空', 'bad');
+        setStatus('请选择 BUC', 'bad');
         return;
       }
-      setStatus('加载中...');
+      clearStatus();
       try {
         const data = await apiFetch(`/api/annotation-view/data?buc=${encodeURIComponent(buc)}&func=${encodeURIComponent(funcName)}`);
         state.data = data;
@@ -243,10 +279,21 @@
         emptyImage.classList.add('hidden');
         renderAnnotationList();
         renderChannels();
-        setStatus(`已加载 ${data.buc} / ${data.func}`, 'ok');
+        clearStatus();
       } catch (error) {
         setStatus(error.message, 'bad');
       }
+    }
+
+    function moveOption(delta) {
+      const options = filteredOptions();
+      if (!options.length) return;
+      const current = Number(bucInput.value);
+      const nextIndex = current < 0
+        ? (delta > 0 ? 0 : options.length - 1)
+        : (current + delta + options.length) % options.length;
+      bucInput.value = String(nextIndex);
+      loadData();
     }
 
     targetImage.addEventListener('load', () => {
@@ -262,8 +309,30 @@
       setStatus('图片加载失败', 'bad');
     });
 
-    document.getElementById('loadBtn').addEventListener('click', loadData);
+    labelFilter.addEventListener('change', () => {
+      renderOptions();
+      const options = filteredOptions();
+      if (options.length) {
+        bucInput.value = '0';
+        loadData();
+      } else {
+        bucInput.innerHTML = '';
+      }
+    });
+    bucInput.addEventListener('change', loadData);
     imageCanvas.addEventListener('click', playSelectedAnnotationAtPointer);
+    document.addEventListener('keydown', event => {
+      const tag = event.target?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (event.key === 'a' || event.key === 'A') {
+        event.preventDefault();
+        moveOption(-1);
+      }
+      if (event.key === 'd' || event.key === 'D') {
+        event.preventDefault();
+        moveOption(1);
+      }
+    });
 
     function formatTime(seconds) {
       if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';

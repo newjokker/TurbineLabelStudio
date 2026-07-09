@@ -310,12 +310,28 @@ def annotation_view_options(x_user_id: Optional[str] = Header(None, alias="X-Use
             .order_by(Annotation.buc, Annotation.func)
             .all()
         )
+        label_rows = (
+            session.query(Annotation.buc, Annotation.func, Label.id, Label.label)
+            .join(Label, Label.id == Annotation.label_id)
+            .group_by(Annotation.buc, Annotation.func, Label.id, Label.label)
+            .order_by(Annotation.buc, Annotation.func, Label.id)
+            .all()
+        )
+        labels_by_key = {}
+        for row in label_rows:
+            labels_by_key.setdefault((row.buc, row.func), []).append(
+                {
+                    "id": row.id,
+                    "label": row.label,
+                }
+            )
         return {
             "items": [
                 {
                     "buc": row.buc,
                     "func": row.func,
                     "annotation_count": row.count,
+                    "labels": labels_by_key.get((row.buc, row.func), []),
                 }
                 for row in rows
             ]

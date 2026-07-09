@@ -185,7 +185,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
 }
 .media-layout {
   display: grid;
-  grid-template-columns: 42px 800px;
+  grid-template-columns: 800px 44px;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
@@ -197,7 +197,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   justify-self: center;
 }
 .audio-progress {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
   align-self: start;
   min-height: 34px;
@@ -240,7 +240,7 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   padding: 0 6px;
 }
 .image-stage {
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 2;
   position: relative;
   background: #fff;
@@ -289,8 +289,9 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   vector-effect: non-scaling-stroke;
 }
 .anno-box.selected rect {
-  fill: color-mix(in srgb, var(--box) 26%, transparent);
-  stroke-width: 2.5;
+  fill: transparent;
+  stroke: #ff0000;
+  stroke-width: 2;
 }
 .empty-state {
   position: absolute;
@@ -377,33 +378,35 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   padding: 12px;
   font-size: 14px;
 }
-.channel-label-panel {
-  grid-column: 1;
+.channel-button-panel {
+  grid-column: 2;
   grid-row: 2;
-  width: 42px;
+  width: 44px;
   height: 800px;
   overflow: hidden;
 }
-.channel-label-list {
+.channel-button-list {
   height: 100%;
   display: grid;
   grid-template-rows: repeat(6, 1fr);
+  gap: 6px;
 }
-.channel-label {
+.channel-button {
+  min-width: 0;
+  width: 44px;
   min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 6px;
-  color: var(--muted);
-  font-size: 13px;
+  padding: 0;
+  border-color: var(--line);
+  background: #fff;
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 700;
 }
-.channel-label.active {
+.channel-button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent);
-}
-.channel-label.disabled {
-  opacity: 0.45;
 }
 @media (max-width: 900px) {
   .page { padding: 16px; }
@@ -420,16 +423,16 @@ th { background: #fbfcfd; color: var(--muted); font-weight: 650; white-space: no
   }
   .audio-progress,
   .image-stage,
-  .channel-label-panel {
+  .channel-button-panel {
     grid-column: 1;
     width: min(100%, 800px);
     justify-self: center;
   }
-  .channel-label-panel {
+  .channel-button-panel {
     grid-row: 3;
     height: auto;
   }
-  .channel-label-list {
+  .channel-button-list {
     grid-template-rows: repeat(6, minmax(52px, auto));
   }
   .viewer-shell {
