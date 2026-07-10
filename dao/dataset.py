@@ -82,3 +82,57 @@ def get_dataset_info_by_name(name):
         return None
     finally:
         session.close()
+
+
+def delete_dataset_by_id(dataset_id):
+    """根据 id 删除数据集，并同步删除 BUC/数据集关系。"""
+    if dataset_id is None:
+        logging.error("删除数据集失败 dataset_id 不能为空")
+        return False
+
+    session = Session()
+    try:
+        from dao.buc_dataset import BucDataset
+
+        record = session.query(Dataset).filter_by(id=dataset_id).first()
+        if not record:
+            logging.error("删除数据集失败 dataset_id 不存在 dataset_id=%s", dataset_id)
+            return False
+
+        session.query(BucDataset).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+        session.delete(record)
+        session.commit()
+        return True
+    except SQLAlchemyError:
+        session.rollback()
+        logging.exception("删除数据集失败 dataset_id=%s", dataset_id)
+        return False
+    finally:
+        session.close()
+
+
+def delete_dataset_by_name(name):
+    """根据名称删除数据集，并同步删除 BUC/数据集关系。"""
+    if not name:
+        logging.error("删除数据集失败 name 不能为空")
+        return False
+
+    session = Session()
+    try:
+        from dao.buc_dataset import BucDataset
+
+        record = session.query(Dataset).filter_by(name=name).first()
+        if not record:
+            logging.error("删除数据集失败 name 不存在 name=%s", name)
+            return False
+
+        session.query(BucDataset).filter_by(dataset_id=record.id).delete(synchronize_session=False)
+        session.delete(record)
+        session.commit()
+        return True
+    except SQLAlchemyError:
+        session.rollback()
+        logging.exception("删除数据集失败 name=%s", name)
+        return False
+    finally:
+        session.close()
