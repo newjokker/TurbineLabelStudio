@@ -249,6 +249,18 @@ def test_public_bucs(headers):
         )
         test(f"GET /api/public/bucs/{DEFAULT_BUC}/audio (ZIP) → 200", status == 200)
 
+        status, result = download_file(
+            f"/api/public/bucs/{DEFAULT_BUC}/annotations/xml",
+            f"{DEFAULT_BUC}_{DEFAULT_FUNC}_test.xml",
+            headers=headers,
+            query={"func": DEFAULT_FUNC},
+        )
+        test(f"GET /api/public/bucs/{DEFAULT_BUC}/annotations/xml → 200", status == 200)
+        if isinstance(result, Path):
+            xml_text = result.read_text(encoding="utf-8")
+            test("  + XML annotation 根节点", "<annotation>" in xml_text)
+            test("  + XML filename 字段", "<filename>" in xml_text)
+
 
 # =============================================================================
 # 数据集

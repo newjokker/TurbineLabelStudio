@@ -121,6 +121,24 @@ print(f"标注数量: {data['annotation_count']}")
 for ann in data['annotations']:
     print(f"  - {ann['label']}: ({ann['x1']:.2f}, {ann['y1']:.2f}) -> ({ann['x2']:.2f}, {ann['y2']:.2f})")`,
       },
+      {
+        method: "GET",
+        path: "/api/public/bucs/{buc}/annotations/xml",
+        summary: "下载 BUC 标注 XML",
+        description: "根据 BUC 和 func 参数下载 Pascal VOC / LabelImg 兼容的 XML 标注文件。未传 func 时使用默认 func。",
+        pathParams: { buc: "BUC_000001" },
+        query: { func: "wh_jzp_before_20260708" },
+        isBinary: true,
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, path = download_file(
+    f"/api/public/bucs/BUC_000001/annotations/xml",
+    save_name="BUC_000001_wh_jzp_before_20260708.xml",
+    headers=headers,
+    query={"func": "wh_jzp_before_20260708"},
+)
+print(f"XML 已保存至: {path}")`,
+      },
     ],
   },
   {

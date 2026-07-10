@@ -9,7 +9,7 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func as sql_func
@@ -26,6 +26,7 @@ from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
 from dao.wav_buc import WAV_POSITION_ORDER, WavBuc
 from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
+from scripts.format_transform import build_annotation_xml
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -934,6 +935,34 @@ def public_get_buc_annotations(
         }
     finally:
         session.close()
+
+
+@app.get("/api/public/bucs/{buc}/annotations/xml")
+def public_download_buc_annotations_xml(
+    buc: str,
+    func_name: str = Query(DEFAULT_FUNC_NAMES[0], alias="func"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        _get_buc_wav_rows(session, buc)
+        annotations = _get_public_annotation_items(session, buc, func_name)
+    finally:
+        session.close()
+
+    image_path = get_img_path_by_buc_func(buc, func_name)
+    if not image_path or not os.path.isfile(image_path):
+        raise HTTPException(status_code=404, detail="图片缓存生成失败，无法生成 XML")
+
+    xml_text = build_annotation_xml(buc, func_name, image_path, annotations)
+    filename = f"{buc}_{func_name}.xml"
+    return Response(
+        content=xml_text,
+        media_type="application/xml; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/datasets")
