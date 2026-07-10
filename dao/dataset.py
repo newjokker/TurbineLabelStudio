@@ -65,3 +65,20 @@ def get_all_datasets():
         return []
     finally:
         session.close()
+
+
+def get_dataset_info_by_name(name):
+    """根据数据集名称查询数据集信息。"""
+    if not name:
+        logging.error("根据名称查询数据集失败 name 不能为空")
+        return None
+
+    session = Session()
+    try:
+        record = session.query(Dataset).filter_by(name=name).first()
+        return record.to_dict() if record else None
+    except SQLAlchemyError:
+        logging.exception("根据名称查询数据集失败 name=%s", name)
+        return None
+    finally:
+        session.close()
