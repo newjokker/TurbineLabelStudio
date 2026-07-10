@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据集管理 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <strong>数据集</strong>
+          <p class="muted" id="permissionText"></p>
+        </div>
+      </div>
+      <form class="form-grid" id="datasetForm">
+        <input type="hidden" id="datasetId">
+        <label>名称 <input id="datasetName" required></label>
+        <label class="wide">描述 <input id="datasetDes"></label>
+        <label class="wide">添加 BUC
+          <select id="bucPicker"></select>
+        </label>
+        <button type="button" id="addBucBtn">添加</button>
+        <button class="secondary" type="button" id="resetBtn">清空</button>
+        <label class="full">BUC 归属 <textarea id="datasetBucs" placeholder="BUC_000001&#10;BUC_000002"></textarea></label>
+        <label class="full">extra_info JSON <textarea id="datasetExtra"></textarea></label>
+        <button type="submit" id="saveBtn">保存数据集</button>
+      </form>
+      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
+    </section>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>数据集</th><th>描述</th><th>BUC 数量</th><th>BUC</th><th>更新时间</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    let datasets = [];
+    let allBucs = [];
+    renderHeader('datasets');
+    renderPermissionText(document.getElementById('permissionText'));
+
+    function canManage() { return !!getPermissions().account_manage; }
+
+    function parseBucs(text) {
+      const seen = new Set();
+      return text
+        .split(/[\s,，]+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .filter(item => {
+          if (seen.has(item)) return false;
+          seen.add(item);
+          return true;
+        });
+    }
+
+    function resetForm() {
+      document.getElementById('datasetId').value = '';
+      document.getElementById('datasetName').value = '';
+      document.getElementById('datasetDes').value = '';
+      document.getElementById('datasetBucs').value = '';
+      document.getElementById('datasetExtra').value = '{}';
+    }
+
+    function renderBucPicker() {
+      document.getElementById('bucPicker').innerHTML = allBucs
+        .map(buc => `<option value="${escapeHtml(buc)}">${escapeHtml(buc)}</option>`)
+        .join('') || '<option value="">暂无 BUC</option>';
+    }
+
+    function renderRows() {
+      document.getElementById('datasetForm').classList.toggle('hidden', !canManage());
+      document.getElementById('rows').innerHTML = datasets.map(item => {
+        const bucs = item.bucs || [];
+        return `
+          <tr>
+            <td>${item.id}</td>
+            <td>${escapeHtml(item.name)}</td>
+            <td>${escapeHtml(item.des || '')}</td>
+            <td>${bucs.length}</td>
+            <td><code>${escapeHtml(bucs.join(', '))}</code></td>
+            <td>${escapeHtml(item.update_time || '')}</td>
+            <td><div class="row-actions">
+              <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
+              <button class="danger" data-delete="${item.id}" ${canManage() ? '' : 'disabled'}>删除</button>
+            </div></td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="7" class="status">暂无数据集</td></tr>';
+    }
+
+    async function loadDatasets() {
+      const status = document.getElementById('status');
+      try {
+        const data = await apiFetch('/api/datasets');
+        datasets = data.items || [];
+        allBucs = data.all_bucs || [];
+        renderBucPicker();
+        renderRows();
+        status.className = 'status ok';
+        status.textContent = `已加载 ${datasets.length} 个数据集`;
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    }
+
+    document.getElementById('addBucBtn').addEventListener('click', () => {
+      const picker = document.getElementById('bucPicker');
+      const value = picker.value;
+      if (!value) return;
+      const bucs = parseBucs(document.getElementById('datasetBucs').value);
+      if (!bucs.includes(value)) bucs.push(value);
+      document.getElementById('datasetBucs').value = bucs.join('\n');
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', resetForm);
+
+    document.getElementById('datasetForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const status = document.getElementById('status');
+      let extra = {};
+      const extraText = document.getElementById('datasetExtra').value.trim();
+      if (extraText) {
+        try {
+          extra = JSON.parse(extraText);
+        } catch (error) {
+          status.className = 'status bad';
+          status.textContent = 'extra_info 不是合法 JSON';
+          return;
+        }
+      }
+      const id = document.getElementById('datasetId').value;
+      const payload = {
+        name: document.getElementById('datasetName').value.trim(),
+        des: document.getElementById('datasetDes').value.trim(),
+        bucs: parseBucs(document.getElementById('datasetBucs').value),
+        extra_info: extra
+      };
+      try {
+        await apiFetch(id ? `/api/datasets/${id}` : '/api/datasets', {
+          method: id ? 'PUT' : 'POST',
+          body: JSON.stringify(payload)
+        });
+        resetForm();
+        await loadDatasets();
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    });
+
+    document.getElementById('rows').addEventListener('click', async event => {
+      const editId = Number(event.target.dataset.edit);
+      const deleteId = Number(event.target.dataset.delete);
+      if (editId) {
+        const item = datasets.find(row => row.id === editId);
+        document.getElementById('datasetId').value = item.id;
+        document.getElementById('datasetName').value = item.name;
+        document.getElementById('datasetDes').value = item.des || '';
+        document.getElementById('datasetBucs').value = (item.bucs || []).join('\n');
+        document.getElementById('datasetExtra').value = JSON.stringify(item.extra_info || {}, null, 2);
+      }
+      if (deleteId && confirm('确认删除这个数据集？')) {
+        try {
+          await apiFetch(`/api/datasets/${deleteId}`, { method: 'DELETE' });
+          await loadDatasets();
+        } catch (error) {
+          document.getElementById('status').className = 'status bad';
+          document.getElementById('status').textContent = error.message;
+        }
+      }
+    });
+
+    resetForm();
+    loadDatasets();
+  </script>
+</body>
+</html>

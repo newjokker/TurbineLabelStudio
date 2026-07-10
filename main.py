@@ -4,19 +4,21 @@ import os
 import uuid
 from datetime import datetime
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func as sql_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from dao import annotation, annotation_lock, label, operation_log, user_account, wav_buc  # noqa: F401
+from dao import annotation, annotation_lock, buc_dataset, dataset, label, operation_log, user_account, wav_buc  # noqa: F401
 from dao.annotation import Annotation
+from dao.buc_dataset import BucDataset
 from dao.annotation_lock import AnnotationLock
 from dao.database import Session, beijing_now, create_all_tables, engine, json_text, json_value
+from dao.dataset import Dataset
 from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
@@ -62,6 +64,13 @@ class AnnotationPayload(BaseModel):
 class AnnotationLockPayload(BaseModel):
     buc: str
     func: str
+
+
+class DatasetPayload(BaseModel):
+    name: str
+    des: Optional[str] = None
+    extra_info: Optional[Dict[str, Any]] = None
+    bucs: List[str] = Field(default_factory=list)
 
 
 class AccountPayload(BaseModel):
@@ -266,6 +275,11 @@ def accounts_page():
     return _page("accounts.html")
 
 
+@app.get("/datasets.html")
+def datasets_page():
+    return _page("datasets.html")
+
+
 @app.get("/annotation_view.html")
 def annotation_view_page():
     return _page("annotation_view.html")
@@ -453,16 +467,33 @@ def annotation_view_options(
                     "label": row.label,
                 }
             )
+        dataset_rows = session.query(Dataset).order_by(Dataset.id).all()
+        dataset_map_rows = (
+            session.query(BucDataset.buc, Dataset.id, Dataset.name)
+            .join(Dataset, Dataset.id == BucDataset.dataset_id)
+            .order_by(BucDataset.buc, Dataset.id)
+            .all()
+        )
+        datasets_by_buc = {}
+        for row in dataset_map_rows:
+            datasets_by_buc.setdefault(row.buc, []).append(
+                {
+                    "id": row.id,
+                    "name": row.name,
+                }
+            )
         buc_rows = session.query(WavBuc.buc).distinct().order_by(WavBuc.buc).all()
         option_keys = {(row.buc, func_name) for row in buc_rows for func_name in DEFAULT_FUNC_NAMES}
         option_keys.update(counts_by_key.keys())
         return {
+            "datasets": [row.to_dict() for row in dataset_rows],
             "items": [
                 {
                     "buc": buc,
                     "func": func_name,
                     "annotation_count": counts_by_key.get((buc, func_name), 0),
                     "labels": labels_by_key.get((buc, func_name), []),
+                    "datasets": datasets_by_buc.get(buc, []),
                 }
                 for buc, func_name in sorted(option_keys)
             ]
@@ -663,6 +694,154 @@ def delete_annotation(
     except SQLAlchemyError as exc:
         session.rollback()
         raise HTTPException(status_code=500, detail="删除标注失败") from exc
+    finally:
+        session.close()
+
+
+def _dataset_dict(session, record):
+    buc_rows = (
+        session.query(BucDataset.buc)
+        .filter_by(dataset_id=record.id)
+        .order_by(BucDataset.buc)
+        .all()
+    )
+    return {
+        **record.to_dict(),
+        "bucs": [row.buc for row in buc_rows],
+    }
+
+
+def _validate_dataset_bucs(session, bucs):
+    normalized = []
+    seen = set()
+    for buc in bucs or []:
+        value = str(buc).strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    if not normalized:
+        return []
+
+    existing = {
+        row.buc
+        for row in session.query(WavBuc.buc).filter(WavBuc.buc.in_(normalized)).distinct().all()
+    }
+    missing = [buc for buc in normalized if buc not in existing]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"BUC 不存在: {', '.join(missing)}")
+    return normalized
+
+
+def _replace_dataset_bucs(session, dataset_id, bucs):
+    session.query(BucDataset).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+    session.add_all([BucDataset(dataset_id=dataset_id, buc=buc) for buc in bucs])
+
+
+@app.get("/api/datasets")
+def list_datasets(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        rows = session.query(Dataset).order_by(Dataset.id).all()
+        buc_rows = session.query(WavBuc.buc).distinct().order_by(WavBuc.buc).all()
+        return {
+            "items": [_dataset_dict(session, row) for row in rows],
+            "all_bucs": [row.buc for row in buc_rows],
+        }
+    finally:
+        session.close()
+
+
+@app.post("/api/datasets")
+def create_dataset(
+    payload: DatasetPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="数据集名称不能为空")
+        bucs = _validate_dataset_bucs(session, payload.bucs)
+        record = Dataset(name=name, des=payload.des, extra_info=json_text(payload.extra_info))
+        session.add(record)
+        session.flush()
+        _replace_dataset_bucs(session, record.id, bucs)
+        session.flush()
+        item = _dataset_dict(session, record)
+        _log(session, actor.id, "create", "dataset", item)
+        session.commit()
+        session.refresh(record)
+        return {"item": _dataset_dict(session, record)}
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="数据集名称已存在") from exc
+    finally:
+        session.close()
+
+
+@app.put("/api/datasets/{dataset_id}")
+def update_dataset(
+    dataset_id: int,
+    payload: DatasetPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        record = session.query(Dataset).filter_by(id=dataset_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="数据集不存在")
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="数据集名称不能为空")
+        before = _dataset_dict(session, record)
+        bucs = _validate_dataset_bucs(session, payload.bucs)
+        record.name = name
+        record.des = payload.des
+        record.extra_info = json_text(payload.extra_info)
+        _replace_dataset_bucs(session, record.id, bucs)
+        session.flush()
+        after = _dataset_dict(session, record)
+        _log(session, actor.id, "update", "dataset", {"before": before, "after": after})
+        session.commit()
+        session.refresh(record)
+        return {"item": _dataset_dict(session, record)}
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="数据集名称已存在") from exc
+    finally:
+        session.close()
+
+
+@app.delete("/api/datasets/{dataset_id}")
+def delete_dataset(
+    dataset_id: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        record = session.query(Dataset).filter_by(id=dataset_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="数据集不存在")
+        before = _dataset_dict(session, record)
+        session.query(BucDataset).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
+        session.delete(record)
+        _log(session, actor.id, "delete", "dataset", before)
+        session.commit()
+        return {"ok": True}
     finally:
         session.close()
 
