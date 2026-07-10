@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """TurbineLabelStudio FastAPI 服务入口。"""
 import os
+import io
 import uuid
+import zipfile
 from datetime import datetime
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func as sql_func
@@ -70,6 +72,10 @@ class DatasetPayload(BaseModel):
     name: str
     des: Optional[str] = None
     extra_info: Optional[Dict[str, Any]] = None
+    bucs: List[str] = Field(default_factory=list)
+
+
+class DatasetBucsPayload(BaseModel):
     bucs: List[str] = Field(default_factory=list)
 
 
@@ -731,6 +737,198 @@ def _validate_dataset_bucs(session, bucs):
 def _replace_dataset_bucs(session, dataset_id, bucs):
     session.query(BucDataset).filter_by(dataset_id=dataset_id).delete(synchronize_session=False)
     session.add_all([BucDataset(dataset_id=dataset_id, buc=buc) for buc in bucs])
+
+
+def _get_buc_wav_rows(session, buc):
+    rows = session.query(WavBuc).filter_by(buc=buc).order_by(WavBuc.position_id).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="BUC 不存在")
+    return rows
+
+
+def _get_public_annotation_items(session, buc, func_name):
+    rows = (
+        session.query(Annotation, Label)
+        .outerjoin(Label, Label.id == Annotation.label_id)
+        .filter(Annotation.buc == buc, Annotation.func == func_name)
+        .order_by(Annotation.id)
+        .all()
+    )
+    items = []
+    for record, label_record in rows:
+        label_extra = json_value(label_record.extra_info) if label_record else {}
+        items.append(
+            {
+                **record.to_dict(),
+                "label": label_record.label if label_record else None,
+                "label_des": label_record.des if label_record else None,
+                "label_extra_info": label_extra,
+            }
+        )
+    return items
+
+
+def _file_response(path, media_type, filename, not_found_detail):
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    return FileResponse(path, media_type=media_type, filename=filename)
+
+
+@app.post("/api/public/datasets")
+def public_create_dataset(
+    payload: DatasetPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="数据集名称不能为空")
+        record = Dataset(name=name, des=payload.des, extra_info=json_text(payload.extra_info))
+        session.add(record)
+        session.flush()
+        item = _dataset_dict(session, record)
+        _log(session, actor.id, "create", "dataset", item)
+        session.commit()
+        session.refresh(record)
+        return {"item": _dataset_dict(session, record)}
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="数据集名称已存在") from exc
+    finally:
+        session.close()
+
+
+@app.put("/api/public/datasets/{dataset_id}/bucs")
+def public_replace_dataset_bucs(
+    dataset_id: int,
+    payload: DatasetBucsPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        record = session.query(Dataset).filter_by(id=dataset_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="数据集不存在")
+        before = _dataset_dict(session, record)
+        bucs = _validate_dataset_bucs(session, payload.bucs)
+        _replace_dataset_bucs(session, dataset_id, bucs)
+        session.flush()
+        after = _dataset_dict(session, record)
+        _log(session, actor.id, "update", "buc_dataset", {"before": before, "after": after})
+        session.commit()
+        return {"item": after}
+    finally:
+        session.close()
+
+
+@app.get("/api/public/bucs/{buc}/image")
+def public_download_buc_image(
+    buc: str,
+    func_name: str = Query(DEFAULT_FUNC_NAMES[0], alias="func"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        _get_buc_wav_rows(session, buc)
+    finally:
+        session.close()
+    image_path = get_img_path_by_buc_func(buc, func_name)
+    return _file_response(image_path, "image/jpeg", f"{buc}_{func_name}.jpg", "图片缓存生成失败")
+
+
+@app.get("/api/public/bucs/{buc}/mel")
+def public_download_buc_mel(
+    buc: str,
+    func_name: str = Query(DEFAULT_FUNC_NAMES[0], alias="func"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        _get_buc_wav_rows(session, buc)
+    finally:
+        session.close()
+    mel_path = get_img_path_by_buc_func(buc, func_name)
+    return _file_response(mel_path, "image/jpeg", f"{buc}_{func_name}_mel.jpg", "Mel 图缓存生成失败")
+
+
+@app.get("/api/public/bucs/{buc}/audio/{position_id}")
+def public_download_buc_audio(
+    buc: str,
+    position_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        row = session.query(WavBuc).filter_by(buc=buc, position_id=position_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="BUC 对应通道音频不存在")
+        md5 = row.wave_md5
+    finally:
+        session.close()
+    wav_path = get_wav_path_by_md5(md5)
+    return _file_response(wav_path, "audio/wav", f"{buc}_{position_id}_{md5}.wav", "WAV 缓存获取失败")
+
+
+@app.get("/api/public/bucs/{buc}/audio")
+def public_download_buc_audio_zip(
+    buc: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        rows = _get_buc_wav_rows(session, buc)
+        wav_items = [(row.position_id, row.wave_md5) for row in rows]
+    finally:
+        session.close()
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for position_id, md5 in wav_items:
+            wav_path = get_wav_path_by_md5(md5)
+            if not wav_path or not os.path.isfile(wav_path):
+                raise HTTPException(status_code=404, detail=f"WAV 缓存获取失败: {position_id}")
+            zf.write(wav_path, arcname=f"{buc}_{position_id}_{md5}.wav")
+    buffer.seek(0)
+    headers = {"Content-Disposition": f'attachment; filename="{buc}_audio.zip"'}
+    return StreamingResponse(buffer, media_type="application/zip", headers=headers)
+
+
+@app.get("/api/public/bucs/{buc}/annotations")
+def public_get_buc_annotations(
+    buc: str,
+    func_name: str = Query(DEFAULT_FUNC_NAMES[0], alias="func"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        wav_rows = _get_buc_wav_rows(session, buc)
+        annotations = _get_public_annotation_items(session, buc, func_name)
+        return {
+            "buc": buc,
+            "func": func_name,
+            "buc_audio": [row.to_dict() for row in wav_rows],
+            "annotation_count": len(annotations),
+            "annotations": annotations,
+        }
+    finally:
+        session.close()
 
 
 @app.get("/api/datasets")
