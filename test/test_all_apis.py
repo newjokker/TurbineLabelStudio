@@ -215,6 +215,22 @@ def test_public_bucs(headers):
     test("  + annotations 为 list", isinstance(data.get("annotations"), list))
     test("  + buc_audio 为 list", isinstance(data.get("buc_audio"), list))
 
+    status, data = request_json(
+        "GET", f"/api/public/bucs/{DEFAULT_BUC}/wav-md5s",
+        headers=headers,
+    )
+    test("GET /api/public/bucs/{buc}/wav-md5s → 200", status == 200, json.dumps(data, ensure_ascii=False)[:120])
+    test("  + wav md5 items 为 list", isinstance(data.get("items"), list))
+
+    first_md5 = data.get("items", [{}])[0].get("wave_md5") if isinstance(data.get("items"), list) and data.get("items") else None
+    if first_md5:
+        status, data = request_json(
+            "GET", f"/api/public/wav-md5/{first_md5}/buc",
+            headers=headers,
+        )
+        test("GET /api/public/wav-md5/{md5}/buc → 200", status == 200, json.dumps(data, ensure_ascii=False)[:120])
+        test("  + md5 已关联目标 BUC", data.get("exists") is True and data.get("buc") == DEFAULT_BUC)
+
     if SKIP_BINARY:
         print("  ⏭ 二进制下载跳过 (TLS_SKIP_BINARY=1)")
     else:
