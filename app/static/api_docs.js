@@ -36,6 +36,70 @@ status, data = request_json("PUT", "/api/public/datasets/1/bucs",
     headers=headers)`,
       },
       {
+        method: "POST",
+        path: "/api/public/bucs",
+        summary: "插入 WAV 映射并生成 BUC",
+        description: "需要 account_manage 权限。传入 6 个 WAV MD5 与标准点位，系统自动生成一个新的 BUC。",
+        body: {
+          wave_position_id: {
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: "B1A",
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb: "B1B",
+            cccccccccccccccccccccccccccccccc: "B2A",
+            dddddddddddddddddddddddddddddddd: "B2B",
+            eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee: "B3A",
+            ffffffffffffffffffffffffffffffff: "B3B",
+          },
+        },
+        response: { buc: "BUC_000123", items: [{ wave_md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", position_id: "B1A", buc: "BUC_000123" }] },
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("POST", "/api/public/bucs",
+    payload={
+        "wave_position_id": {
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "B1A",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "B1B",
+            "cccccccccccccccccccccccccccccccc": "B2A",
+            "dddddddddddddddddddddddddddddddd": "B2B",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": "B3A",
+            "ffffffffffffffffffffffffffffffff": "B3B",
+        }
+    },
+    headers=headers,
+)
+print(f"新 BUC: {data['buc']}")`,
+      },
+      {
+        method: "GET",
+        path: "/api/public/wav-md5/{md5}/buc",
+        summary: "查询 MD5 是否已关联 BUC",
+        description: "根据单个 WAV MD5 查询是否已经存在于 wav_buc 表，并返回关联 BUC。",
+        pathParams: { md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        response: { wave_md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", exists: true, buc: "BUC_000001", item: { wave_md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", position_id: "B1A", buc: "BUC_000001" } },
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET",
+    "/api/public/wav-md5/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/buc",
+    headers=headers,
+)
+print(data["exists"], data["buc"])`,
+      },
+      {
+        method: "GET",
+        path: "/api/public/bucs/{buc}/wav-md5s",
+        summary: "查询 BUC 关联的 MD5 列表",
+        description: "根据 BUC 返回该 BUC 下所有 position_id 与 wave_md5 映射，按 B1A/B1B/B2A/B2B/B3A/B3B 排序。",
+        pathParams: { buc: "BUC_000001" },
+        response: { buc: "BUC_000001", count: 6, items: [{ wave_md5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", position_id: "B1A", buc: "BUC_000001" }] },
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET",
+    "/api/public/bucs/BUC_000001/wav-md5s",
+    headers=headers,
+)
+for item in data["items"]:
+    print(item["position_id"], item["wave_md5"])`,
+      },
+      {
         method: "GET",
         path: "/api/public/bucs/{buc}/image",
         summary: "下载 BUC 图片",

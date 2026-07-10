@@ -2,6 +2,7 @@
 """TurbineLabelStudio FastAPI 服务入口。"""
 import os
 import io
+import re
 import uuid
 import zipfile
 from datetime import datetime
@@ -24,7 +25,7 @@ from dao.dataset import Dataset
 from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
-from dao.wav_buc import WAV_POSITION_ORDER, WavBuc
+from dao.wav_buc import WAV_POSITION_ORDER, WavBuc, generate_next_buc
 from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
 from scripts.format_transform import build_annotation_xml
 
@@ -34,6 +35,7 @@ APP_DIR = os.path.join(BASE_DIR, "app")
 STATIC_DIR = os.path.join(APP_DIR, "static")
 DEFAULT_FUNC_NAMES = ["wh_jzp_before_20260708"]
 LOCK_TTL = timedelta(minutes=5)
+MD5_RE = re.compile(r"^[0-9a-f]{32}$")
 
 app = FastAPI(title="TurbineLabelStudio")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -78,6 +80,10 @@ class DatasetPayload(BaseModel):
 
 class DatasetBucsPayload(BaseModel):
     bucs: List[str] = Field(default_factory=list)
+
+
+class WavBucPayload(BaseModel):
+    wave_position_id: Dict[str, str]
 
 
 class AccountPayload(BaseModel):
@@ -774,6 +780,38 @@ def _get_public_annotation_items(session, buc, func_name):
     return items
 
 
+def _normalize_wave_position_id(wave_position_id):
+    if not wave_position_id:
+        raise HTTPException(status_code=400, detail="wave_position_id 不能为空")
+
+    normalized = {}
+    seen_positions = set()
+    for raw_md5, raw_position_id in wave_position_id.items():
+        md5 = str(raw_md5).strip().lower()
+        position_id = str(raw_position_id).strip()
+        if not MD5_RE.match(md5):
+            raise HTTPException(status_code=400, detail=f"wave_md5 格式不正确: {raw_md5}")
+        if position_id not in WAV_POSITION_ORDER:
+            raise HTTPException(status_code=400, detail=f"position_id 不合法: {position_id}")
+        if position_id in seen_positions:
+            raise HTTPException(status_code=400, detail=f"position_id 重复: {position_id}")
+        normalized[md5] = position_id
+        seen_positions.add(position_id)
+
+    missing = [position_id for position_id in WAV_POSITION_ORDER if position_id not in seen_positions]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"缺少 position_id: {', '.join(missing)}")
+
+    return normalized
+
+
+def _normalize_md5_or_400(md5):
+    value = str(md5).strip().lower()
+    if not MD5_RE.match(value):
+        raise HTTPException(status_code=400, detail="md5 格式不正确")
+    return value
+
+
 def _file_response(path, media_type, filename, not_found_detail):
     if not path or not os.path.isfile(path):
         raise HTTPException(status_code=404, detail=not_found_detail)
@@ -830,6 +868,91 @@ def public_replace_dataset_bucs(
         _log(session, actor.id, "update", "buc_dataset", {"before": before, "after": after})
         session.commit()
         return {"item": after}
+    finally:
+        session.close()
+
+
+@app.post("/api/public/bucs")
+def public_create_buc(
+    payload: WavBucPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    wave_position_id = _normalize_wave_position_id(payload.wave_position_id)
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "account_manage")
+        existing = (
+            session.query(WavBuc)
+            .filter(WavBuc.wave_md5.in_(list(wave_position_id.keys())))
+            .order_by(WavBuc.position_id)
+            .all()
+        )
+        if existing:
+            existed = [row.to_dict() for row in existing]
+            raise HTTPException(status_code=409, detail={"message": "部分 wave_md5 已关联 BUC", "items": existed})
+
+        buc = generate_next_buc(session)
+        records = [
+            WavBuc(wave_md5=md5, position_id=position_id, buc=buc)
+            for md5, position_id in sorted(wave_position_id.items(), key=lambda item: WAV_POSITION_ORDER.index(item[1]))
+        ]
+        session.add_all(records)
+        session.flush()
+        items = [record.to_dict() for record in records]
+        result = {"buc": buc, "items": items}
+        _log(session, actor.id, "create", "wav_buc", result)
+        session.commit()
+        return result
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="创建 BUC 失败，wave_md5 或 BUC 数据冲突") from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="创建 BUC 失败") from exc
+    finally:
+        session.close()
+
+
+@app.get("/api/public/wav-md5/{md5}/buc")
+def public_get_buc_by_md5(
+    md5: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    md5 = _normalize_md5_or_400(md5)
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        record = session.query(WavBuc).filter_by(wave_md5=md5).first()
+        return {
+            "wave_md5": md5,
+            "exists": bool(record),
+            "buc": record.buc if record else None,
+            "item": record.to_dict() if record else None,
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/public/bucs/{buc}/wav-md5s")
+def public_get_buc_wav_md5s(
+    buc: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        rows = _get_buc_wav_rows(session, buc)
+        position_order = {position_id: idx for idx, position_id in enumerate(WAV_POSITION_ORDER)}
+        items = sorted(rows, key=lambda row: position_order.get(row.position_id, len(WAV_POSITION_ORDER)))
+        return {
+            "buc": buc,
+            "count": len(items),
+            "items": [row.to_dict() for row in items],
+        }
     finally:
         session.close()
 
