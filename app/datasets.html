@@ -8,36 +8,37 @@
 </head>
 <body>
   <header id="siteHeader"></header>
-  <main class="page">
-    <section class="panel">
-      <div class="toolbar">
+  <main class="page dataset-page">
+    <section class="panel dataset-editor-panel">
+      <div class="dataset-toolbar">
         <div>
-          <strong>数据集</strong>
-          <p class="muted" id="permissionText"></p>
+          <strong>数据集管理</strong>
+          <span id="permissionText"></span>
         </div>
+        <span class="status" id="status">加载中...</span>
       </div>
-      <form class="form-grid" id="datasetForm">
+      <form class="dataset-form" id="datasetForm">
         <input type="hidden" id="datasetId">
-        <label>名称 <input id="datasetName" required></label>
-        <label class="wide">描述 <input id="datasetDes"></label>
-        <label class="wide">添加 BUC
+        <label>名称 <input id="datasetName" placeholder="例如 for_ldq" required></label>
+        <label class="dataset-description-field">说明 <textarea id="datasetDes" placeholder="说明这个数据集给谁使用、标注什么内容、筛选什么范围"></textarea></label>
+        <label class="dataset-picker-field">添加 BUC
           <select id="bucPicker"></select>
         </label>
         <button type="button" id="addBucBtn">添加</button>
         <button class="secondary" type="button" id="resetBtn">清空</button>
-        <label class="full">BUC 归属 <textarea id="datasetBucs" placeholder="BUC_000001&#10;BUC_000002"></textarea></label>
-        <label class="full">extra_info JSON <textarea id="datasetExtra"></textarea></label>
-        <button type="submit" id="saveBtn">保存数据集</button>
+        <label class="dataset-bucs-field">BUC 归属 <textarea id="datasetBucs" placeholder="BUC_000001&#10;BUC_000002"></textarea></label>
+        <label class="dataset-extra-field">extra_info JSON <textarea id="datasetExtra"></textarea></label>
+        <div class="dataset-actions">
+          <button type="submit" id="saveBtn">保存数据集</button>
+        </div>
       </form>
-      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
     </section>
-    <section class="panel">
-      <table>
-        <thead>
-          <tr><th>ID</th><th>数据集</th><th>描述</th><th>BUC 数量</th><th>BUC</th><th>更新时间</th><th>操作</th></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <section class="dataset-list-panel">
+      <div class="dataset-list-head">
+        <strong>已有数据集</strong>
+        <span class="muted">查看每个数据集包含哪些 BUC，管理员可编辑归属。</span>
+      </div>
+      <div class="dataset-list" id="rows"></div>
     </section>
   </main>
   <script src="/static/common.js"></script>
@@ -49,6 +50,13 @@
     renderPermissionText(document.getElementById('permissionText'));
 
     function canManage() { return !!getPermissions().account_manage; }
+
+    function renderBucChips(bucs) {
+      if (!bucs.length) return '<span class="metric-chip warn">暂无 BUC</span>';
+      const visible = bucs.slice(0, 12).map(buc => `<span class="buc-chip">${escapeHtml(buc)}</span>`).join('');
+      const more = bucs.length > 12 ? `<span class="metric-chip">还有 ${bucs.length - 12} 个</span>` : '';
+      return `<div class="chip-list">${visible}${more}</div>`;
+    }
 
     function parseBucs(text) {
       const seen = new Set();
@@ -82,20 +90,28 @@
       document.getElementById('rows').innerHTML = datasets.map(item => {
         const bucs = item.bucs || [];
         return `
-          <tr>
-            <td>${item.id}</td>
-            <td>${escapeHtml(item.name)}</td>
-            <td>${escapeHtml(item.des || '')}</td>
-            <td>${bucs.length}</td>
-            <td><code>${escapeHtml(bucs.join(', '))}</code></td>
-            <td>${escapeHtml(item.update_time || '')}</td>
-            <td><div class="row-actions">
+          <article class="dataset-card-row">
+            <div class="dataset-card-main">
+              <div class="dataset-card-title">
+                <strong>${escapeHtml(item.name)}</strong>
+                <span>ID ${item.id}</span>
+              </div>
+              <p>${escapeHtml(item.des || '暂无说明')}</p>
+            </div>
+            <div class="dataset-card-bucs">
+              <div class="dataset-card-meta">
+                <span class="metric-chip">${bucs.length} 个 BUC</span>
+                ${item.update_time ? `<span>${escapeHtml(item.update_time)}</span>` : ''}
+              </div>
+              ${renderBucChips(bucs)}
+            </div>
+            <div class="row-actions dataset-card-actions">
               <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
               <button class="danger" data-delete="${item.id}" ${canManage() ? '' : 'disabled'}>删除</button>
-            </div></td>
-          </tr>
+            </div>
+          </article>
         `;
-      }).join('') || '<tr><td colspan="7" class="status">暂无数据集</td></tr>';
+      }).join('') || '<div class="empty-table">暂无数据集</div>';
     }
 
     async function loadDatasets() {

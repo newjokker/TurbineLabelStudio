@@ -10,17 +10,18 @@
   <header id="siteHeader"></header>
   <main class="page">
     <section class="panel">
-      <div class="toolbar">
-        <div>
+      <div class="page-head">
+        <div class="page-title">
           <strong>账号管理</strong>
+          <span>查看账号角色和启用状态；管理员可以新增、编辑或停用账号。</span>
           <p class="muted" id="permissionText"></p>
         </div>
       </div>
       <form class="form-grid" id="accountForm">
         <input type="hidden" id="accountId">
-        <label>账号 <input id="name" required></label>
+        <label>账号 <input id="name" placeholder="登录账号" required></label>
         <label>密码 <input id="password" placeholder="编辑时留空表示不修改"></label>
-        <label>昵称 <input id="alias"></label>
+        <label>昵称 <input id="alias" placeholder="页面显示名称"></label>
         <label>角色
           <select id="role">
             <option value="观察者">观察者</option>
@@ -37,7 +38,7 @@
     <section class="panel">
       <table>
         <thead>
-          <tr><th>ID</th><th>账号</th><th>昵称</th><th>角色</th><th>停用时间</th><th>操作</th></tr>
+          <tr><th>账号</th><th>角色</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -52,6 +53,12 @@
 
     function canManage() { return !!getPermissions().account_manage; }
 
+    function roleClass(role) {
+      if (role === '管理员') return 'admin';
+      if (role === '编辑者') return 'editor';
+      return '';
+    }
+
     function resetForm() {
       document.getElementById('accountId').value = '';
       document.getElementById('name').value = '';
@@ -65,17 +72,24 @@
       document.getElementById('accountForm').classList.toggle('hidden', !canManage());
       document.getElementById('rows').innerHTML = accounts.map(item => `
         <tr>
-          <td>${item.id}</td>
-          <td>${escapeHtml(item.name)}</td>
-          <td>${escapeHtml(item.alias || '')}</td>
-          <td>${escapeHtml(item.role)}</td>
-          <td>${escapeHtml(item.end_time || '')}</td>
+          <td>
+            <div class="identity-cell">
+              <strong>${escapeHtml(item.alias || item.name)}</strong>
+              <small>${escapeHtml(item.name)} · ID ${item.id}</small>
+            </div>
+          </td>
+          <td><span class="role-chip ${roleClass(item.role)}">${escapeHtml(item.role)}</span></td>
+          <td>
+            ${item.end_time
+              ? `<span class="metric-chip warn">已停用 ${escapeHtml(item.end_time)}</span>`
+              : '<span class="metric-chip good">启用中</span>'}
+          </td>
           <td><div class="row-actions">
             <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
             <button class="danger" data-disable="${item.id}" ${canManage() ? '' : 'disabled'}>停用</button>
           </div></td>
         </tr>
-      `).join('') || '<tr><td colspan="6" class="status">暂无账号</td></tr>';
+      `).join('') || '<tr><td colspan="4" class="empty-table">暂无账号</td></tr>';
     }
 
     async function loadAccounts() {

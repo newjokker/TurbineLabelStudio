@@ -10,19 +10,20 @@
   <header id="siteHeader"></header>
   <main class="page">
     <section class="panel">
-      <div class="toolbar">
-        <div>
+      <div class="page-head">
+        <div class="page-title">
           <strong>标签管理</strong>
+          <span>维护标签名称、颜色和判定说明；描述越清楚，标注时越不容易混淆。</span>
           <p class="muted" id="permissionText"></p>
         </div>
       </div>
       <form class="form-grid" id="labelForm">
         <input type="hidden" id="labelId">
-        <label>标签 <input id="labelName" required></label>
+        <label>标签 <input id="labelName" placeholder="例如 sed_qtj" required></label>
         <label>更新人 <input id="updateBy" readonly></label>
-        <label>颜色 <input id="color" type="color" value="#0f5f8a"></label>
+        <label>颜色 <input id="color" type="color" value="#386641"></label>
         <button type="submit" id="saveBtn">保存</button>
-        <label class="wide">描述和标注方法 <textarea id="des"></textarea></label>
+        <label class="wide">用途说明和判定方法 <textarea id="des" placeholder="说明这个标签代表什么，什么情况下应该标这个标签。"></textarea></label>
         <label class="wide">extra_info JSON <textarea id="extraInfo"></textarea></label>
       </form>
       <div class="toolbar"><span class="status" id="status">加载中...</span></div>
@@ -30,7 +31,7 @@
     <section class="panel">
       <table>
         <thead>
-          <tr><th>ID</th><th>标签</th><th>描述</th><th>更新人</th><th>更新时间</th><th>extra_info</th><th>操作</th></tr>
+          <tr><th>标签</th><th>用途说明</th><th>维护信息</th><th>extra_info</th><th>操作</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -44,6 +45,10 @@
     renderPermissionText(document.getElementById('permissionText'));
 
     function canWrite() { return !!getPermissions().label_write; }
+
+    function labelPurpose(item) {
+      return item.des?.trim() || '暂无用途说明';
+    }
 
     function randomLabelColor() {
       const ranges = [[25, 75], [90, 175], [195, 315]];
@@ -104,11 +109,19 @@
         const color = item.extra_info?.color || '#94a3b8';
         return `
           <tr>
-            <td>${item.id}</td>
-            <td><span class="swatch" style="--chip:${escapeHtml(color)}"></span>${escapeHtml(item.label)}</td>
-            <td>${escapeHtml(item.des || '')}</td>
-            <td>${escapeHtml(item.update_by || '')}</td>
-            <td>${escapeHtml(item.update_time || '')}</td>
+            <td>
+              <div class="label-cell">
+                <strong><span class="swatch" style="--chip:${escapeHtml(color)}"></span>${escapeHtml(item.label)}</strong>
+                <small>ID ${item.id}</small>
+              </div>
+            </td>
+            <td><div class="desc-cell"><span>${escapeHtml(labelPurpose(item))}</span></div></td>
+            <td>
+              <div class="identity-cell">
+                <strong>${escapeHtml(item.update_by || '未记录')}</strong>
+                <small>${escapeHtml(item.update_time || '')}</small>
+              </div>
+            </td>
             <td><code>${escapeHtml(JSON.stringify(item.extra_info || {}))}</code></td>
             <td><div class="row-actions">
               <button class="secondary" data-edit="${item.id}" ${canWrite() ? '' : 'disabled'}>编辑</button>
@@ -116,7 +129,7 @@
             </div></td>
           </tr>
         `;
-      }).join('') || '<tr><td colspan="7" class="status">暂无标签</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="empty-table">暂无标签</td></tr>';
     }
 
     async function loadLabels() {
@@ -170,7 +183,7 @@
         document.getElementById('labelId').value = item.id;
         document.getElementById('labelName').value = item.label;
         document.getElementById('updateBy').value = user.name;
-        document.getElementById('color').value = item.extra_info?.color || '#0f5f8a';
+        document.getElementById('color').value = item.extra_info?.color || '#386641';
         document.getElementById('des').value = item.des || '';
         const extra = { ...(item.extra_info || {}) };
         extra.color = document.getElementById('color').value;
