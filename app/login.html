@@ -36,7 +36,7 @@
             password: document.getElementById('password').value
           })
         });
-        setUser(data.user, data.permissions);
+        setUser(data.user, data.permissions, data.session_id);
         location.href = '/index.html';
       } catch (error) {
         status.className = 'status bad';

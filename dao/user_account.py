@@ -19,6 +19,8 @@ class UserAccount(Base):
     alias = Column(String(255), nullable=True)
     end_time = Column(DateTime, nullable=True)
     role = Column(String(50), nullable=False)
+    active_session_id = Column(String(64), nullable=True)
+    active_session_time = Column(DateTime, nullable=True)
 
     __table_args__ = (
         CheckConstraint(

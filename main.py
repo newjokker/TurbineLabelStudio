@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """TurbineLabelStudio FastAPI 服务入口。"""
 import os
+import uuid
 from datetime import datetime
+from datetime import timedelta
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -11,9 +13,10 @@ from pydantic import BaseModel
 from sqlalchemy import func as sql_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from dao import annotation, label, operation_log, user_account, wav_buc  # noqa: F401
+from dao import annotation, annotation_lock, label, operation_log, user_account, wav_buc  # noqa: F401
 from dao.annotation import Annotation
-from dao.database import Session, beijing_now, create_all_tables, json_text, json_value
+from dao.annotation_lock import AnnotationLock
+from dao.database import Session, beijing_now, create_all_tables, engine, json_text, json_value
 from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
@@ -25,6 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "app")
 STATIC_DIR = os.path.join(APP_DIR, "static")
 DEFAULT_FUNC_NAMES = ["wh_jzp_before_20260708"]
+LOCK_TTL = timedelta(minutes=5)
 
 app = FastAPI(title="TurbineLabelStudio")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -53,6 +57,11 @@ class AnnotationPayload(BaseModel):
     difficult: bool = False
     update_reason: Optional[str] = None
     extra_info: Optional[Dict[str, Any]] = None
+
+
+class AnnotationLockPayload(BaseModel):
+    buc: str
+    func: str
 
 
 class AccountPayload(BaseModel):
@@ -128,14 +137,18 @@ def _log(session, user_id, act, table_name, change_info):
     )
 
 
-def _get_actor(session, x_user_id):
+def _get_actor(session, x_user_id, x_session_id):
     if not x_user_id:
         raise HTTPException(status_code=401, detail="未登录")
+    if not x_session_id:
+        raise HTTPException(status_code=401, detail="登录会话缺失，请重新登录")
     actor = session.query(UserAccount).filter_by(id=int(x_user_id)).first()
     if not actor:
         raise HTTPException(status_code=401, detail="用户不存在")
     if actor.end_time and actor.end_time <= beijing_now():
         raise HTTPException(status_code=403, detail="账号已停用")
+    if actor.active_session_id != x_session_id:
+        raise HTTPException(status_code=401, detail="账号已在其他设备登录，请重新登录")
     return actor
 
 
@@ -145,9 +158,82 @@ def _require(actor, permission):
         raise HTTPException(status_code=403, detail="当前角色没有权限")
 
 
+def _lock_expired(lock):
+    return not lock.locked_at or lock.locked_at <= beijing_now() - LOCK_TTL
+
+
+def _lock_owner_name(session, lock):
+    owner = session.query(UserAccount).filter_by(id=lock.locked_by).first()
+    return owner.alias or owner.name if owner else f"用户 {lock.locked_by}"
+
+
+def _require_annotation_lock(session, actor, session_id, buc, func_name):
+    lock = session.query(AnnotationLock).filter_by(buc=buc, func=func_name).first()
+    if not lock or _lock_expired(lock):
+        raise HTTPException(status_code=423, detail="当前图片未锁定或锁已过期，请重新进入编辑模式")
+    if lock.locked_by != actor.id or lock.locked_session_id != session_id:
+        raise HTTPException(status_code=423, detail=f"当前图片已被 {_lock_owner_name(session, lock)} 锁定，无法编辑")
+    lock.locked_at = beijing_now()
+    return lock
+
+
+def _release_session_locks(session, actor, session_id, keep=None):
+    locks = (
+        session.query(AnnotationLock)
+        .filter(
+            AnnotationLock.locked_by == actor.id,
+            AnnotationLock.locked_session_id == session_id,
+        )
+        .all()
+    )
+    for lock in locks:
+        if keep and lock.buc == keep[0] and lock.func == keep[1]:
+            continue
+        session.delete(lock)
+
+
+def _acquire_annotation_lock(session, actor, session_id, buc, func_name):
+    if not session.query(WavBuc.buc).filter_by(buc=buc).first():
+        raise HTTPException(status_code=400, detail="BUC 不存在")
+    _release_session_locks(session, actor, session_id, keep=(buc, func_name))
+    lock = session.query(AnnotationLock).filter_by(buc=buc, func=func_name).first()
+    now = beijing_now()
+    if lock:
+        if (
+            not _lock_expired(lock)
+            and (lock.locked_by != actor.id or lock.locked_session_id != session_id)
+        ):
+            raise HTTPException(status_code=423, detail=f"当前图片已被 {_lock_owner_name(session, lock)} 锁定，无法编辑")
+        lock.locked_by = actor.id
+        lock.locked_session_id = session_id
+        lock.locked_at = now
+    else:
+        lock = AnnotationLock(
+            buc=buc,
+            func=func_name,
+            locked_by=actor.id,
+            locked_session_id=session_id,
+            locked_at=now,
+        )
+        session.add(lock)
+    session.flush()
+    return lock
+
+
 @app.on_event("startup")
 def startup():
     create_all_tables()
+    ensure_runtime_schema()
+
+
+def ensure_runtime_schema():
+    """为已有 SQLite 数据库补充新版本需要的列。"""
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(user_account)").fetchall()}
+        if "active_session_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE user_account ADD COLUMN active_session_id VARCHAR(64)")
+        if "active_session_time" not in columns:
+            conn.exec_driver_sql("ALTER TABLE user_account ADD COLUMN active_session_time DATETIME")
 
 
 @app.get("/")
@@ -198,10 +284,15 @@ def login(payload: LoginPayload):
             raise HTTPException(status_code=401, detail="账号或密码不正确")
         if record.end_time and record.end_time <= beijing_now():
             raise HTTPException(status_code=403, detail="账号已停用")
+        session_id = uuid.uuid4().hex
+        record.active_session_id = session_id
+        record.active_session_time = beijing_now()
+        session.query(AnnotationLock).filter_by(locked_by=record.id).delete(synchronize_session=False)
         _log(session, record.id, "login", "user_account", {"name": record.name})
         session.commit()
         return {
             "user": _safe_user(record),
+            "session_id": session_id,
             "permissions": ROLE_PERMISSIONS.get(record.role, ROLE_PERMISSIONS["观察者"]),
             "server_time": _format_dt(beijing_now()),
         }
@@ -210,10 +301,13 @@ def login(payload: LoginPayload):
 
 
 @app.get("/api/permissions")
-def permissions(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def permissions(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         return {
             "user": _safe_user(actor),
             "permissions": ROLE_PERMISSIONS.get(actor.role, ROLE_PERMISSIONS["观察者"]),
@@ -224,10 +318,13 @@ def permissions(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
 
 
 @app.get("/api/labels")
-def list_labels(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def list_labels(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        _get_actor(session, x_user_id)
+        _get_actor(session, x_user_id, x_session_id)
         rows = session.query(Label).order_by(Label.id).all()
         return {"items": [_label_dict(row) for row in rows]}
     finally:
@@ -235,10 +332,14 @@ def list_labels(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
 
 
 @app.post("/api/labels")
-def create_label(payload: LabelPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def create_label(
+    payload: LabelPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "label_write")
         record = Label(
             label=payload.label,
@@ -263,10 +364,15 @@ def create_label(payload: LabelPayload, x_user_id: Optional[str] = Header(None, 
 
 
 @app.put("/api/labels/{label_id}")
-def update_label(label_id: int, payload: LabelPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def update_label(
+    label_id: int,
+    payload: LabelPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "label_write")
         record = session.query(Label).filter_by(id=label_id).first()
         if not record:
@@ -293,10 +399,14 @@ def update_label(label_id: int, payload: LabelPayload, x_user_id: Optional[str] 
 
 
 @app.delete("/api/labels/{label_id}")
-def delete_label(label_id: int, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def delete_label(
+    label_id: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "label_write")
         record = session.query(Label).filter_by(id=label_id).first()
         if not record:
@@ -314,10 +424,13 @@ def delete_label(label_id: int, x_user_id: Optional[str] = Header(None, alias="X
 
 
 @app.get("/api/annotation-view/options")
-def annotation_view_options(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def annotation_view_options(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        _get_actor(session, x_user_id)
+        _get_actor(session, x_user_id, x_session_id)
         rows = (
             session.query(Annotation.buc, Annotation.func, sql_func.count(Annotation.id).label("count"))
             .group_by(Annotation.buc, Annotation.func)
@@ -363,10 +476,11 @@ def annotation_view_data(
     buc: str,
     func_name: str = Query(..., alias="func"),
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id)
+        _get_actor(session, x_user_id, x_session_id)
         rows = (
             session.query(Annotation, Label)
             .outerjoin(Label, Label.id == Annotation.label_id)
@@ -423,12 +537,80 @@ def annotation_view_wav(md5: str):
     return FileResponse(wav_path, media_type="audio/wav")
 
 
-@app.post("/api/annotations")
-def create_annotation(payload: AnnotationPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+@app.post("/api/annotation-lock/lock")
+def lock_annotation_image(
+    payload: AnnotationLockPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "label_write")
+        lock = _acquire_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
+        _log(session, actor.id, "update", "annotation_lock", lock.to_dict())
+        session.commit()
+        session.refresh(lock)
+        return {"item": lock.to_dict(), "expires_in": int(LOCK_TTL.total_seconds())}
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=423, detail="当前图片刚刚被其他用户锁定，无法编辑") from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="锁定图片失败") from exc
+    finally:
+        session.close()
+
+
+@app.post("/api/annotation-lock/heartbeat")
+def heartbeat_annotation_lock(
+    payload: AnnotationLockPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "label_write")
+        lock = _require_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
+        session.commit()
+        session.refresh(lock)
+        return {"item": lock.to_dict(), "expires_in": int(LOCK_TTL.total_seconds())}
+    finally:
+        session.close()
+
+
+@app.post("/api/annotation-lock/unlock")
+def unlock_annotation_image(
+    payload: AnnotationLockPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        lock = session.query(AnnotationLock).filter_by(buc=payload.buc, func=payload.func).first()
+        if lock and lock.locked_by == actor.id and lock.locked_session_id == x_session_id:
+            before = lock.to_dict()
+            session.delete(lock)
+            _log(session, actor.id, "update", "annotation_lock", {"unlock": before})
+        session.commit()
+        return {"ok": True}
+    finally:
+        session.close()
+
+
+@app.post("/api/annotations")
+def create_annotation(
+    payload: AnnotationPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "label_write")
+        _require_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
         if not session.query(WavBuc.buc).filter_by(buc=payload.buc).first():
             raise HTTPException(status_code=400, detail="BUC 不存在")
         if not session.query(Label.id).filter_by(id=payload.label_id).first():
@@ -460,14 +642,19 @@ def create_annotation(payload: AnnotationPayload, x_user_id: Optional[str] = Hea
 
 
 @app.delete("/api/annotations/{annotation_id}")
-def delete_annotation(annotation_id: int, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def delete_annotation(
+    annotation_id: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "label_write")
         record = session.query(Annotation).filter_by(id=annotation_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="标注不存在")
+        _require_annotation_lock(session, actor, x_session_id, record.buc, record.func)
         before = record.to_dict()
         session.delete(record)
         _log(session, actor.id, "delete", "annotation", before)
@@ -481,10 +668,13 @@ def delete_annotation(annotation_id: int, x_user_id: Optional[str] = Header(None
 
 
 @app.get("/api/accounts")
-def list_accounts(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def list_accounts(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        _get_actor(session, x_user_id)
+        _get_actor(session, x_user_id, x_session_id)
         rows = session.query(UserAccount).order_by(UserAccount.id).all()
         return {"items": [_safe_user(row) for row in rows]}
     finally:
@@ -492,10 +682,14 @@ def list_accounts(x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
 
 
 @app.post("/api/accounts")
-def create_account(payload: AccountPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def create_account(
+    payload: AccountPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "account_manage")
         if payload.role not in ROLE_PERMISSIONS:
             raise HTTPException(status_code=400, detail="角色不合法")
@@ -522,10 +716,15 @@ def create_account(payload: AccountPayload, x_user_id: Optional[str] = Header(No
 
 
 @app.put("/api/accounts/{account_id}")
-def update_account(account_id: int, payload: AccountPayload, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def update_account(
+    account_id: int,
+    payload: AccountPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "account_manage")
         if payload.role not in ROLE_PERMISSIONS:
             raise HTTPException(status_code=400, detail="角色不合法")
@@ -552,10 +751,14 @@ def update_account(account_id: int, payload: AccountPayload, x_user_id: Optional
 
 
 @app.post("/api/accounts/{account_id}/disable")
-def disable_account(account_id: int, x_user_id: Optional[str] = Header(None, alias="X-User-Id")):
+def disable_account(
+    account_id: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
     session = Session()
     try:
-        actor = _get_actor(session, x_user_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
         _require(actor, "account_manage")
         record = session.query(UserAccount).filter_by(id=account_id).first()
         if not record:

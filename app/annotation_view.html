@@ -105,7 +105,10 @@
       labels: [],
       canEdit: false,
       editMode: false,
-      drawStart: null
+      drawStart: null,
+      lockHeartbeatTimer: null,
+      lockedBuc: null,
+      lockedFunc: null
     };
 
     const statusEl = document.getElementById('status');
@@ -211,15 +214,16 @@
       });
     }
 
-    function switchBuc(buc) {
+    async function switchBuc(buc) {
       if (!buc || bucInput.value === buc) {
         renderBucList();
         return;
       }
-      bucInput.value = buc;
-      renderFuncOptions();
-      renderBucList();
-      loadData();
+      await switchImageSelection(() => {
+        bucInput.value = buc;
+        renderFuncOptions();
+        renderBucList();
+      });
     }
 
     function renderFuncOptions() {
@@ -399,13 +403,85 @@
       return selectedBucOptions().find(item => item.func === funcInput.value) || null;
     }
 
+    function currentLockPayload() {
+      const option = selectedOption();
+      if (!option) return null;
+      return { buc: option.buc, func: option.func };
+    }
+
+    function stopLockHeartbeat() {
+      if (state.lockHeartbeatTimer) {
+        clearInterval(state.lockHeartbeatTimer);
+        state.lockHeartbeatTimer = null;
+      }
+    }
+
+    function startLockHeartbeat() {
+      stopLockHeartbeat();
+      state.lockHeartbeatTimer = setInterval(async () => {
+        if (!state.editMode || !state.lockedBuc || !state.lockedFunc) return;
+        try {
+          await apiFetch('/api/annotation-lock/heartbeat', {
+            method: 'POST',
+            body: JSON.stringify({ buc: state.lockedBuc, func: state.lockedFunc })
+          });
+        } catch (error) {
+          state.editMode = false;
+          state.drawStart = null;
+          state.lockedBuc = null;
+          state.lockedFunc = null;
+          stopLockHeartbeat();
+          renderBoxes();
+          renderEditControls();
+          setStatus(error.message, 'bad');
+        }
+      }, 60000);
+    }
+
+    async function lockCurrentImage() {
+      const payload = currentLockPayload();
+      if (!payload) throw new Error('请选择 BUC');
+      await apiFetch('/api/annotation-lock/lock', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      state.lockedBuc = payload.buc;
+      state.lockedFunc = payload.func;
+      startLockHeartbeat();
+    }
+
+    async function unlockCurrentImage() {
+      stopLockHeartbeat();
+      if (!state.lockedBuc || !state.lockedFunc) return;
+      const payload = { buc: state.lockedBuc, func: state.lockedFunc };
+      state.lockedBuc = null;
+      state.lockedFunc = null;
+      try {
+        await apiFetch('/api/annotation-lock/unlock', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      } catch (error) {
+        setStatus(error.message, 'bad');
+      }
+    }
+
+    async function leaveEditMode() {
+      if (!state.editMode && !state.lockedBuc) return;
+      state.editMode = false;
+      state.drawStart = null;
+      await unlockCurrentImage();
+      renderBoxes();
+      renderEditControls();
+    }
+
     async function loadData() {
       const option = selectedOption();
       const buc = option?.buc;
       const funcName = option?.func;
       if (!buc || !funcName) {
         setStatus('请选择 BUC', 'bad');
-        return;
+        return false;
       }
       clearStatus();
       try {
@@ -420,22 +496,118 @@
         renderChannels();
         renderEditControls();
         clearStatus();
+        return true;
       } catch (error) {
         setStatus(error.message, 'bad');
+        return false;
       }
     }
 
-    function moveOption(delta) {
+    async function switchImageSelection(updateSelection) {
+      const keepEditMode = state.editMode;
+      if (keepEditMode) {
+        state.drawStart = null;
+        await unlockCurrentImage();
+      } else {
+        await leaveEditMode();
+      }
+
+      updateSelection();
+      const loaded = await loadData();
+      if (!keepEditMode) return;
+
+      if (!loaded) {
+        state.editMode = false;
+        renderBoxes();
+        renderEditControls();
+        return;
+      }
+
+      try {
+        await lockCurrentImage();
+        state.editMode = true;
+        setStatus('已切换图片并保持编辑模式', 'ok');
+      } catch (error) {
+        state.editMode = false;
+        state.drawStart = null;
+        setStatus(error.message, 'bad');
+      }
+      renderBoxes();
+      renderEditControls();
+    }
+
+    function isLockConflictError(error) {
+      return String(error?.message || '').includes('已被') && String(error?.message || '').includes('锁定');
+    }
+
+    async function moveOption(delta) {
       const bucs = [...new Set(filteredOptions().map(item => item.buc))];
       if (!bucs.length) return;
       const current = bucs.indexOf(bucInput.value);
-      const nextIndex = current < 0
-        ? (delta > 0 ? 0 : bucs.length - 1)
-        : (current + delta + bucs.length) % bucs.length;
-      bucInput.value = bucs[nextIndex];
+      if (!state.editMode) {
+        const nextIndex = current < 0
+          ? (delta > 0 ? 0 : bucs.length - 1)
+          : (current + delta + bucs.length) % bucs.length;
+        await switchImageSelection(() => {
+          bucInput.value = bucs[nextIndex];
+          renderFuncOptions();
+          renderBucList();
+        });
+        return;
+      }
+
+      const originalBuc = bucInput.value;
+      const originalFunc = funcInput.value;
+      state.drawStart = null;
+      await unlockCurrentImage();
+
+      const candidateCount = current < 0 ? bucs.length : Math.max(bucs.length - 1, 0);
+      for (let step = 1; step <= candidateCount; step += 1) {
+        const baseIndex = current < 0 ? (delta > 0 ? -1 : bucs.length) : current;
+        const nextIndex = (baseIndex + delta * step + bucs.length) % bucs.length;
+        bucInput.value = bucs[nextIndex];
+        renderFuncOptions();
+        renderBucList();
+
+        try {
+          await lockCurrentImage();
+          const loaded = await loadData();
+          if (!loaded) {
+            await unlockCurrentImage();
+            state.editMode = false;
+            renderBoxes();
+            renderEditControls();
+            return;
+          }
+          state.editMode = true;
+          setStatus(step > 1 ? '已跳过被其他人锁定的图片，并保持编辑模式' : '已切换图片并保持编辑模式', 'ok');
+          renderBoxes();
+          renderEditControls();
+          return;
+        } catch (error) {
+          if (isLockConflictError(error) && step < candidateCount) continue;
+          break;
+        }
+      }
+
+      bucInput.value = originalBuc;
       renderFuncOptions();
+      if (originalFunc && [...funcInput.options].some(item => item.value === originalFunc)) {
+        funcInput.value = originalFunc;
+      }
       renderBucList();
-      loadData();
+      await loadData();
+      try {
+        await lockCurrentImage();
+        state.editMode = true;
+        setStatus('后面没有可编辑的未锁定图片，已停留在当前图片', 'bad');
+      } catch (error) {
+        state.editMode = false;
+        state.drawStart = null;
+        setStatus(error.message, 'bad');
+      }
+      renderBoxes();
+      renderEditControls();
     }
 
     targetImage.addEventListener('load', () => {
@@ -455,7 +627,8 @@
       event.stopPropagation();
       editLabelMenu.classList.toggle('hidden');
     });
-    labelFilter.addEventListener('change', () => {
+    labelFilter.addEventListener('change', async () => {
+      await leaveEditMode();
       renderOptions();
       const options = selectedBucOptions();
       if (options.length) {
@@ -473,12 +646,15 @@
       setEditLabelValue(option.dataset.value || '', option.dataset.text || '请选择标签');
     });
     document.addEventListener('click', closeLabelDropdowns);
-    bucInput.addEventListener('change', () => {
-      renderFuncOptions();
-      renderBucList();
-      loadData();
+    bucInput.addEventListener('change', async () => {
+      await switchImageSelection(() => {
+        renderFuncOptions();
+        renderBucList();
+      });
     });
-    funcInput.addEventListener('change', loadData);
+    funcInput.addEventListener('change', async () => {
+      await switchImageSelection(() => {});
+    });
     annotationJumpSelect.addEventListener('change', () => {
       const id = Number(annotationJumpSelect.value);
       if (id) selectAnnotation(id);
@@ -567,16 +743,17 @@
             return;
           }
           if (!state.labels.length) await loadLabelsForEdit();
+          await lockCurrentImage();
           state.editMode = true;
-          clearStatus();
+          setStatus('已进入编辑模式，当前图片锁定 5 分钟，编辑中会自动续锁', 'ok');
         } catch (error) {
           setStatus(error.message, 'bad');
           return;
         }
       } else {
-        state.editMode = false;
-        state.drawStart = null;
-        renderBoxes();
+        await leaveEditMode();
+        setStatus('已退出编辑模式', 'ok');
+        return;
       }
       renderEditControls();
     });
@@ -815,6 +992,21 @@
       hidePlayhead();
     });
     gainInput.addEventListener('change', updatePlaybackGain);
+    window.addEventListener('beforeunload', () => {
+      if (!state.lockedBuc || !state.lockedFunc) return;
+      const user = getUser();
+      const sessionId = localStorage.getItem('tls_session_id');
+      fetch('/api/annotation-lock/unlock', {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': user?.id || '',
+          'X-Session-Id': sessionId || ''
+        },
+        body: JSON.stringify({ buc: state.lockedBuc, func: state.lockedFunc })
+      });
+    });
 
     Promise.all([loadPermissions(), loadOptions()])
       .then(loadData)

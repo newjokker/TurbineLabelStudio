@@ -9,9 +9,10 @@ function getUser() {
   return text ? JSON.parse(text) : null;
 }
 
-function setUser(user, permissions) {
+function setUser(user, permissions, sessionId) {
   localStorage.setItem('tls_user', JSON.stringify(user));
   localStorage.setItem('tls_permissions', JSON.stringify(permissions));
+  if (sessionId) localStorage.setItem('tls_session_id', sessionId);
 }
 
 function getPermissions() {
@@ -22,6 +23,7 @@ function getPermissions() {
 function logout() {
   localStorage.removeItem('tls_user');
   localStorage.removeItem('tls_permissions');
+  localStorage.removeItem('tls_session_id');
   location.href = '/login.html';
 }
 
@@ -33,12 +35,21 @@ function requireLogin() {
 
 async function apiFetch(url, options = {}) {
   const user = getUser();
+  const sessionId = localStorage.getItem('tls_session_id');
   const headers = options.headers || {};
   if (user) headers['X-User-Id'] = user.id;
+  if (sessionId) headers['X-Session-Id'] = sessionId;
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
   const response = await fetch(url, { ...options, headers });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || '请求失败');
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('tls_user');
+      localStorage.removeItem('tls_permissions');
+      localStorage.removeItem('tls_session_id');
+    }
+    throw new Error(data.detail || '请求失败');
+  }
   return data;
 }
 
