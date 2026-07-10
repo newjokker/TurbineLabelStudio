@@ -265,11 +265,6 @@ def labels_page():
     return _page("labels.html")
 
 
-@app.get("/label_view.html")
-def label_view_page():
-    return _page("label_view.html")
-
-
 @app.get("/accounts.html")
 def accounts_page():
     return _page("accounts.html")

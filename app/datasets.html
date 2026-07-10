@@ -8,81 +8,44 @@
 </head>
 <body>
   <header id="siteHeader"></header>
-  <main class="page dataset-page">
-    <section class="panel dataset-editor-panel">
-      <div class="dataset-toolbar">
-        <div>
+  <main class="page">
+    <section class="panel">
+      <div class="page-head">
+        <div class="page-title">
           <strong>数据集管理</strong>
-          <span id="permissionText"></span>
+          <span>新增或删除数据集</span>
+          <p class="muted" id="permissionText"></p>
         </div>
-        <span class="status" id="status">加载中...</span>
       </div>
-      <form class="dataset-form" id="datasetForm">
-        <input type="hidden" id="datasetId">
+      <form class="form-grid" id="datasetForm">
         <label>名称 <input id="datasetName" placeholder="例如 for_ldq" required></label>
-        <label class="dataset-description-field">说明 <textarea id="datasetDes" placeholder="说明这个数据集给谁使用、标注什么内容、筛选什么范围"></textarea></label>
-        <label class="dataset-picker-field">添加 BUC
-          <select id="bucPicker"></select>
-        </label>
-        <button type="button" id="addBucBtn">添加</button>
+        <button type="submit" id="saveBtn">保存</button>
         <button class="secondary" type="button" id="resetBtn">清空</button>
-        <label class="dataset-bucs-field">BUC 归属 <textarea id="datasetBucs" placeholder="BUC_000001&#10;BUC_000002"></textarea></label>
-        <label class="dataset-extra-field">extra_info JSON <textarea id="datasetExtra"></textarea></label>
-        <div class="dataset-actions">
-          <button type="submit" id="saveBtn">保存数据集</button>
-        </div>
+        <label class="wide">说明 <textarea id="datasetDes" placeholder="说明这个数据集给谁使用、标注什么内容、筛选什么范围"></textarea></label>
       </form>
+      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
     </section>
-    <section class="dataset-list-panel">
-      <div class="dataset-list-head">
-        <strong>已有数据集</strong>
-        <span class="muted">查看每个数据集包含哪些 BUC，管理员可编辑归属。</span>
-      </div>
-      <div class="dataset-list" id="rows"></div>
+    <section class="panel">
+      <table>
+        <thead>
+          <tr><th>ID</th><th>名称</th><th>说明</th><th>BUC 数量</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
     </section>
   </main>
   <script src="/static/common.js"></script>
   <script>
     requireLogin();
     let datasets = [];
-    let allBucs = [];
     renderHeader('datasets');
     renderPermissionText(document.getElementById('permissionText'));
 
     function canManage() { return !!getPermissions().account_manage; }
 
-    function renderBucChips(bucs) {
-      if (!bucs.length) return '<span class="metric-chip warn">暂无 BUC</span>';
-      const visible = bucs.slice(0, 12).map(buc => `<span class="buc-chip">${escapeHtml(buc)}</span>`).join('');
-      const more = bucs.length > 12 ? `<span class="metric-chip">还有 ${bucs.length - 12} 个</span>` : '';
-      return `<div class="chip-list">${visible}${more}</div>`;
-    }
-
-    function parseBucs(text) {
-      const seen = new Set();
-      return text
-        .split(/[\s,，]+/)
-        .map(item => item.trim())
-        .filter(Boolean)
-        .filter(item => {
-          if (seen.has(item)) return false;
-          seen.add(item);
-          return true;
-        });
-    }
-
     function resetForm() {
-      document.getElementById('datasetId').value = '';
       document.getElementById('datasetName').value = '';
       document.getElementById('datasetDes').value = '';
-      document.getElementById('datasetBucs').value = '';
-      document.getElementById('datasetExtra').value = '{}';
-    }
-
-    function renderBucPicker() {
-      document.getElementById('bucPicker').innerHTML = allBucs
-        .map(buc => `<option value="${escapeHtml(buc)}">${escapeHtml(buc)}</option>`)
-        .join('') || '<option value="">暂无 BUC</option>';
     }
 
     function renderRows() {
@@ -90,28 +53,21 @@
       document.getElementById('rows').innerHTML = datasets.map(item => {
         const bucs = item.bucs || [];
         return `
-          <article class="dataset-card-row">
-            <div class="dataset-card-main">
-              <div class="dataset-card-title">
+          <tr>
+            <td><code>${item.id}</code></td>
+            <td>
+              <div class="identity-cell">
                 <strong>${escapeHtml(item.name)}</strong>
-                <span>ID ${item.id}</span>
               </div>
-              <p>${escapeHtml(item.des || '暂无说明')}</p>
-            </div>
-            <div class="dataset-card-bucs">
-              <div class="dataset-card-meta">
-                <span class="metric-chip">${bucs.length} 个 BUC</span>
-                ${item.update_time ? `<span>${escapeHtml(item.update_time)}</span>` : ''}
-              </div>
-              ${renderBucChips(bucs)}
-            </div>
-            <div class="row-actions dataset-card-actions">
-              <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
+            </td>
+            <td><div class="desc-cell"><span>${escapeHtml(item.des || '暂无说明')}</span></div></td>
+            <td><span class="metric-chip">${bucs.length} 个 BUC</span></td>
+            <td><div class="row-actions">
               <button class="danger" data-delete="${item.id}" ${canManage() ? '' : 'disabled'}>删除</button>
-            </div>
-          </article>
+            </div></td>
+          </tr>
         `;
-      }).join('') || '<div class="empty-table">暂无数据集</div>';
+      }).join('') || '<tr><td colspan="5" class="empty-table">暂无数据集</td></tr>';
     }
 
     async function loadDatasets() {
@@ -119,8 +75,6 @@
       try {
         const data = await apiFetch('/api/datasets');
         datasets = data.items || [];
-        allBucs = data.all_bucs || [];
-        renderBucPicker();
         renderRows();
         status.className = 'status ok';
         status.textContent = `已加载 ${datasets.length} 个数据集`;
@@ -130,41 +84,18 @@
       }
     }
 
-    document.getElementById('addBucBtn').addEventListener('click', () => {
-      const picker = document.getElementById('bucPicker');
-      const value = picker.value;
-      if (!value) return;
-      const bucs = parseBucs(document.getElementById('datasetBucs').value);
-      if (!bucs.includes(value)) bucs.push(value);
-      document.getElementById('datasetBucs').value = bucs.join('\n');
-    });
-
     document.getElementById('resetBtn').addEventListener('click', resetForm);
 
     document.getElementById('datasetForm').addEventListener('submit', async event => {
       event.preventDefault();
       const status = document.getElementById('status');
-      let extra = {};
-      const extraText = document.getElementById('datasetExtra').value.trim();
-      if (extraText) {
-        try {
-          extra = JSON.parse(extraText);
-        } catch (error) {
-          status.className = 'status bad';
-          status.textContent = 'extra_info 不是合法 JSON';
-          return;
-        }
-      }
-      const id = document.getElementById('datasetId').value;
       const payload = {
         name: document.getElementById('datasetName').value.trim(),
-        des: document.getElementById('datasetDes').value.trim(),
-        bucs: parseBucs(document.getElementById('datasetBucs').value),
-        extra_info: extra
+        des: document.getElementById('datasetDes').value.trim()
       };
       try {
-        await apiFetch(id ? `/api/datasets/${id}` : '/api/datasets', {
-          method: id ? 'PUT' : 'POST',
+        await apiFetch('/api/datasets', {
+          method: 'POST',
           body: JSON.stringify(payload)
         });
         resetForm();
@@ -176,16 +107,7 @@
     });
 
     document.getElementById('rows').addEventListener('click', async event => {
-      const editId = Number(event.target.dataset.edit);
       const deleteId = Number(event.target.dataset.delete);
-      if (editId) {
-        const item = datasets.find(row => row.id === editId);
-        document.getElementById('datasetId').value = item.id;
-        document.getElementById('datasetName').value = item.name;
-        document.getElementById('datasetDes').value = item.des || '';
-        document.getElementById('datasetBucs').value = (item.bucs || []).join('\n');
-        document.getElementById('datasetExtra').value = JSON.stringify(item.extra_info || {}, null, 2);
-      }
       if (deleteId && confirm('确认删除这个数据集？')) {
         try {
           await apiFetch(`/api/datasets/${deleteId}`, { method: 'DELETE' });
