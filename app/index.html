@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TurbineLabelStudio</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    /* iframe fills the full panel-docs */
+    #panel-docs iframe {
+      width: 100%;
+      border: 0;
+      display: block;
+    }
+    #panel-docs {
+      padding-top: 0;
+    }
+  </style>
 </head>
 <body>
   <header id="siteHeader"></header>
@@ -42,49 +53,8 @@
       </div>
     </section>
 
-    <!-- ==================== API 文档面板 ==================== -->
+    <!-- ==================== API 文档面板（iframe 嵌入） ==================== -->
     <section class="tab-panel" id="panel-docs">
-      <!-- 搜索和概览 -->
-      <div class="panel">
-        <div class="page-head">
-          <div class="page-title">
-            <strong>📘 TurbineLabelStudio API</strong>
-            <span>提供标注数据、音频文件、图片与数据集管理的开放接口。所有 Public API 需要登录后携带 Header 鉴权。</span>
-          </div>
-          <div class="page-tools">
-            <input type="text" id="apiSearch" placeholder="搜索 API..." style="width:240px;min-height:36px;" oninput="filterApis()">
-          </div>
-        </div>
-      </div>
-
-      <div class="api-sidebar-layout">
-        <!-- 左侧目录 -->
-        <nav class="api-toc" id="apiToc"></nav>
-
-        <!-- 右侧 API 列表 -->
-        <div class="api-detail" id="apiDetail"></div>
-      </div>
-
-      <!-- 内联测试面板 -->
-      <div class="panel" id="tryPanel" style="display:none;">
-        <div class="page-head">
-          <div class="page-title">
-            <strong id="tryTitle">Try It</strong>
-            <span id="tryPath"></span>
-          </div>
-          <div class="page-tools">
-            <button class="secondary" onclick="closeTry()">关闭</button>
-          </div>
-        </div>
-        <div style="padding:16px;display:grid;gap:12px;">
-          <div id="tryParams"></div>
-          <div style="display:flex;gap:8px;">
-            <button id="trySendBtn" onclick="sendTry()">发送请求</button>
-            <span id="tryStatus" class="status"></span>
-          </div>
-          <pre id="tryResponse" style="background:var(--panel-soft);border:1px solid var(--line);border-radius:6px;padding:12px;overflow:auto;max-height:400px;font-size:13px;display:none;"></pre>
-        </div>
-      </div>
     </section>
 
   </main>
@@ -99,7 +69,23 @@
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-        if (btn.dataset.tab === 'docs') renderApiDocs();
+        // 切换到 docs tab 时加载 iframe（懒加载）
+        if (btn.dataset.tab === 'docs') {
+          const panel = document.getElementById('panel-docs');
+          if (!panel.querySelector('iframe')) {
+            const iframe = document.createElement('iframe');
+            iframe.src = '/api_docs.html';
+            iframe.style.height = 'calc(100vh - 200px)';
+            iframe.onload = () => {
+              // 调整 iframe 高度适应内容
+              try {
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                iframe.style.height = Math.max(doc.body.scrollHeight + 40, 600) + 'px';
+              } catch(e) { /* cross-origin 限制 */ }
+            };
+            panel.appendChild(iframe);
+          }
+        }
       });
     });
 

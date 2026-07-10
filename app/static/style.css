@@ -337,6 +337,7 @@ td code {
 }
 .api-tab:hover {
   color: var(--text);
+  background: #f8f7f5;
 }
 .api-tab.active {
   color: var(--accent);
@@ -490,6 +491,38 @@ td code {
   font-family: "SF Mono", "Cascadia Code", monospace;
   margin: 0;
   white-space: pre;
+}
+
+.api-util-section {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.api-util-section h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.api-util-section .api-code {
+  max-height: 500px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-color: #333;
+}
+.python-example {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.python-example .api-section-title {
+  color: var(--green);
+}
+.python-code {
+  font-size: 12px !important;
+  line-height: 1.55 !important;
 }
 
 @media (max-width: 900px) {

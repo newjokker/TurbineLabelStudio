@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API 文档 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body {
+      background: var(--panel);
+      overflow: hidden;  /* 禁止 body 滚动，用右侧容器滚动 */
+      height: 100vh;
+    }
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .api-sidebar-layout {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 20px;
+      flex: 1;
+      min-height: 0;  /* 允许 grid 子项收缩 */
+    }
+    .api-toc {
+      position: sticky;
+      top: 0;
+      max-height: calc(100vh - 140px);
+      overflow: auto;
+    }
+    .api-detail {
+      min-width: 0;
+      overflow-y: auto;  /* 右侧独立滚动 */
+      padding-bottom: 40px;
+    }
+    iframe { width: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <!-- 搜索和概览 -->
+    <div class="panel" style="border:0;box-shadow:none;background:transparent;flex-shrink:0;">
+      <div class="page-head" style="padding:0 0 16px;">
+        <div class="page-title">
+          <strong>📘 TurbineLabelStudio API</strong>
+          <span>提供标注数据、音频文件、图片与数据集管理的开放接口。所有 Public API 需要登录后携带 Header 鉴权。</span>
+        </div>
+        <div class="page-tools">
+          <input type="text" id="apiSearch" placeholder="搜索 API..." style="width:240px;min-height:36px;" oninput="filterApis()">
+        </div>
+      </div>
+    </div>
+
+    <div class="api-sidebar-layout">
+      <!-- 左侧目录（固定不滚动） -->
+      <nav class="api-toc" id="apiToc"></nav>
+
+      <!-- 右侧 API 列表（独立滚动） -->
+      <div class="api-detail" id="apiDetail"></div>
+    </div>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script src="/static/api_docs.js"></script>
+  <script>
+    renderApiDocs();
+  </script>
+</body>
+</html>

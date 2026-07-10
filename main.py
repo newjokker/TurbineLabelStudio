@@ -286,6 +286,11 @@ def annotation_view_page():
     return _page("annotation_view.html")
 
 
+@app.get("/api_docs.html")
+def api_docs_page():
+    return _page("api_docs.html")
+
+
 @app.post("/api/login")
 def login(payload: LoginPayload):
     session = Session()

@@ -1,160 +1,8 @@
 // =============================================================================
-// TurbineLabelStudio API 文档 & 内联测试
+// TurbineLabelStudio API 文档 — 仅公开数据 & 数据集管理
 // =============================================================================
 
 const API_GROUPS = [
-  {
-    id: "auth",
-    title: "🔐 认证 (Auth)",
-    apis: [
-      {
-        method: "POST",
-        path: "/api/login",
-        summary: "用户登录",
-        description: "使用 name 和 password 登录系统，返回用户信息、session_id 和权限。",
-        body: { name: "txkj", password: "txkj" },
-        response: { user: { id: 1, name: "txkj", alias: null, end_time: null, role: "管理员" }, session_id: "...", permissions: { label_write: true, label_export: true, account_manage: true }, server_time: "2026-07-10 12:00:00" },
-        auth: false,
-      },
-      {
-        method: "GET",
-        path: "/api/permissions",
-        summary: "获取当前用户权限",
-        description: "通过 Header X-User-Id 和 X-Session-Id 获取当前会话的用户信息和权限。",
-        response: { user: { id: 1, name: "txkj", alias: null, end_time: null, role: "管理员" }, permissions: { label_write: true, label_export: true, account_manage: true }, server_time: "2026-07-10 12:00:00" },
-        auth: true,
-      },
-    ],
-  },
-  {
-    id: "labels",
-    title: "🏷️ 标签管理 (Labels)",
-    apis: [
-      {
-        method: "GET",
-        path: "/api/labels",
-        summary: "获取标签列表",
-        description: "返回全部标签，按 id 排序。",
-        response: { items: [{ id: 1, label: "裂纹", des: "叶片表面裂纹", update_by: "txkj", update_time: "2026-07-10 12:00:00", extra_info: { color: "#e74c3c" } }] },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/labels",
-        summary: "新建标签",
-        description: "需要 label_write 权限。label 唯一，重复会返回 400。",
-        body: { label: "新标签", des: "描述", extra_info: { color: "#3498db" } },
-        response: { item: { id: 2, label: "新标签", des: "描述", extra_info: { color: "#3498db" } } },
-        auth: true,
-      },
-      {
-        method: "PUT",
-        path: "/api/labels/{label_id}",
-        summary: "更新标签",
-        description: "需要 label_write 权限。根据 label_id 更新标签信息。",
-        pathParams: { label_id: "1" },
-        body: { label: "裂纹修改", des: "更新后的描述" },
-        response: { item: { id: 1, label: "裂纹修改", des: "更新后的描述" } },
-        auth: true,
-      },
-      {
-        method: "DELETE",
-        path: "/api/labels/{label_id}",
-        summary: "删除标签",
-        description: "需要 label_write 权限。已被标注引用的标签无法删除(400)。",
-        pathParams: { label_id: "1" },
-        response: { ok: true },
-        auth: true,
-      },
-    ],
-  },
-  {
-    id: "annotations",
-    title: "✏️ 标注管理 (Annotations)",
-    apis: [
-      {
-        method: "GET",
-        path: "/api/annotation-view/options",
-        summary: "获取标注视图选项",
-        description: "返回所有 BUC 标注统计、标签、关联数据集等。",
-        query: {},
-        response: { datasets: [], items: [{ buc: "BUC_000001", func: "wh_jzp_before_20260708", annotation_count: 3, labels: [], datasets: [] }] },
-        auth: true,
-      },
-      {
-        method: "GET",
-        path: "/api/annotation-view/data",
-        summary: "获取标注数据",
-        description: "根据 BUC 和 func 获取标注详情、图片 URL 和 6 个通道音频 URL。",
-        query: { buc: "BUC_000001", func: "wh_jzp_before_20260708" },
-        response: { buc: "BUC_000001", func: "wh_jzp_before_20260708", image_url: "/api/annotation-view/image?...", annotations: [], channels: [] },
-        auth: true,
-      },
-      {
-        method: "GET",
-        path: "/api/annotation-view/image",
-        summary: "获取标注图片",
-        description: "根据 BUC + func 返回生成的标注图片（JPEG）。",
-        query: { buc: "BUC_000001", func: "wh_jzp_before_20260708" },
-        isBinary: true,
-        auth: false,
-      },
-      {
-        method: "GET",
-        path: "/api/annotation-view/wav/{md5}",
-        summary: "获取音频文件",
-        description: "根据 md5 返回 WAV 音频文件。",
-        pathParams: { md5: "abc123..." },
-        isBinary: true,
-        auth: false,
-      },
-      {
-        method: "POST",
-        path: "/api/annotations",
-        summary: "创建标注框",
-        description: "需要 label_write 权限并且该图片已被当前用户锁定。",
-        body: { buc: "BUC_000001", func: "wh_jzp_before_20260708", x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.5, label_id: 1, difficult: false, update_reason: "新增标注" },
-        response: { item: { id: 1, buc: "BUC_000001", func: "wh_jzp_before_20260708", x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.5, label_id: 1 } },
-        auth: true,
-      },
-      {
-        method: "DELETE",
-        path: "/api/annotations/{annotation_id}",
-        summary: "删除标注框",
-        description: "需要 label_write 权限并且图片已被锁定。",
-        pathParams: { annotation_id: "1" },
-        response: { ok: true },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/annotation-lock/lock",
-        summary: "锁定标注图片",
-        description: "需要 label_write 权限。编辑标注前先锁定图片，防止多人同时编辑。锁定时长 5 分钟。",
-        body: { buc: "BUC_000001", func: "wh_jzp_before_20260708" },
-        response: { item: { buc: "BUC_000001", func: "wh_jzp_before_20260708", locked_by: 1, locked_at: "2026-07-10 12:00:00" }, expires_in: 300 },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/annotation-lock/heartbeat",
-        summary: "标注锁心跳",
-        description: "续期标注锁定，过期前调用此接口重置 5 分钟 TTL。",
-        body: { buc: "BUC_000001", func: "wh_jzp_before_20260708" },
-        response: { item: { buc: "BUC_000001", func: "wh_jzp_before_20260708", locked_by: 1, locked_at: "2026-07-10 12:05:00" }, expires_in: 300 },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/annotation-lock/unlock",
-        summary: "解锁标注图片",
-        description: "释放当前用户持有的锁。",
-        body: { buc: "BUC_000001", func: "wh_jzp_before_20260708" },
-        response: { ok: true },
-        auth: true,
-      },
-    ],
-  },
   {
     id: "public",
     title: "📦 公开数据 API (Public)",
@@ -168,6 +16,10 @@ const API_GROUPS = [
         body: { name: "测试数据集", des: "描述", extra_info: {} },
         response: { item: { id: 1, name: "测试数据集", des: "描述", bucs: [], extra_info: {} } },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("POST", "/api/public/datasets",
+    payload={"name": "测试数据集", "des": "描述", "extra_info": {}},
+    headers=headers)`,
       },
       {
         method: "PUT",
@@ -178,6 +30,10 @@ const API_GROUPS = [
         body: { bucs: ["BUC_000001", "BUC_000002"] },
         response: { item: { id: 1, name: "测试数据集", des: "描述", bucs: ["BUC_000001", "BUC_000002"] } },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("PUT", "/api/public/datasets/1/bucs",
+    payload={"bucs": ["BUC_000001", "BUC_000002"]},
+    headers=headers)`,
       },
       {
         method: "GET",
@@ -188,6 +44,14 @@ const API_GROUPS = [
         query: { func: "wh_jzp_before_20260708" },
         isBinary: true,
         auth: true,
+        pythonExample: `headers = login_headers()
+status, path = download_file(
+    f"/api/public/bucs/BUC_000001/image",
+    save_name="buc_image.jpg",
+    headers=headers,
+    query={"func": "wh_jzp_before_20260708"},
+)
+print(f"图片已保存至: {path}")`,
       },
       {
         method: "GET",
@@ -198,6 +62,14 @@ const API_GROUPS = [
         query: { func: "wh_jzp_before_20260708" },
         isBinary: true,
         auth: true,
+        pythonExample: `headers = login_headers()
+status, path = download_file(
+    f"/api/public/bucs/BUC_000001/mel",
+    save_name="buc_mel.jpg",
+    headers=headers,
+    query={"func": "wh_jzp_before_20260708"},
+)
+print(f"Mel 图已保存至: {path}")`,
       },
       {
         method: "GET",
@@ -207,6 +79,13 @@ const API_GROUPS = [
         pathParams: { buc: "BUC_000001", position_id: "B1A" },
         isBinary: true,
         auth: true,
+        pythonExample: `headers = login_headers()
+status, path = download_file(
+    f"/api/public/bucs/BUC_000001/audio/B1A",
+    save_name="buc_B1A.wav",
+    headers=headers,
+)
+print(f"音频已保存至: {path}")`,
       },
       {
         method: "GET",
@@ -216,6 +95,13 @@ const API_GROUPS = [
         pathParams: { buc: "BUC_000001" },
         isBinary: true,
         auth: true,
+        pythonExample: `headers = login_headers()
+status, path = download_file(
+    f"/api/public/bucs/BUC_000001/audio",
+    save_name="buc_audio_all.zip",
+    headers=headers,
+)
+print(f"ZIP 已保存至: {path}")`,
       },
       {
         method: "GET",
@@ -226,12 +112,20 @@ const API_GROUPS = [
         query: { func: "wh_jzp_before_20260708" },
         response: { buc: "BUC_000001", func: "wh_jzp_before_20260708", buc_audio: [], annotation_count: 3, annotations: [{ id: 1, buc: "BUC_000001", x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.5, label_id: 1, label: "裂纹", label_des: "叶片表面裂纹" }] },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET", f"/api/public/bucs/BUC_000001/annotations",
+    headers=headers,
+    query={"func": "wh_jzp_before_20260708"},
+)
+print(f"标注数量: {data['annotation_count']}")
+for ann in data['annotations']:
+    print(f"  - {ann['label']}: ({ann['x1']:.2f}, {ann['y1']:.2f}) -> ({ann['x2']:.2f}, {ann['y2']:.2f})")`,
       },
     ],
   },
   {
     id: "datasets",
-    title: "📊 数据集管理 (Datasets Internal)",
+    title: "📊 数据集管理 (Datasets)",
     apis: [
       {
         method: "GET",
@@ -240,6 +134,10 @@ const API_GROUPS = [
         description: "返回全部数据集和所有 BUC 列表。",
         response: { items: [{ id: 1, name: "数据集1", des: "描述", bucs: ["BUC_000001"], extra_info: {} }], all_bucs: ["BUC_000001"] },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET", "/api/datasets", headers=headers)
+for ds in data["items"]:
+    print(f"数据集: {ds['name']}  BUC 数: {len(ds['bucs'])}")`,
       },
       {
         method: "POST",
@@ -249,6 +147,10 @@ const API_GROUPS = [
         body: { name: "新数据集", des: "描述", bucs: ["BUC_000001"] },
         response: { item: { id: 2, name: "新数据集", des: "描述", bucs: ["BUC_000001"] } },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("POST", "/api/datasets",
+    payload={"name": "新数据集", "des": "描述", "bucs": ["BUC_000001"]},
+    headers=headers)`,
       },
       {
         method: "PUT",
@@ -259,6 +161,10 @@ const API_GROUPS = [
         body: { name: "改名", des: "新描述", bucs: ["BUC_000001"] },
         response: { item: { id: 1, name: "改名", des: "新描述", bucs: ["BUC_000001"] } },
         auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("PUT", "/api/datasets/1",
+    payload={"name": "改名", "des": "新描述", "bucs": ["BUC_000001"]},
+    headers=headers)`,
       },
       {
         method: "DELETE",
@@ -268,58 +174,89 @@ const API_GROUPS = [
         pathParams: { dataset_id: "1" },
         response: { ok: true },
         auth: true,
-      },
-    ],
-  },
-  {
-    id: "accounts",
-    title: "👤 账号管理 (Accounts)",
-    apis: [
-      {
-        method: "GET",
-        path: "/api/accounts",
-        summary: "获取账号列表",
-        description: "返回所有用户账号信息。",
-        response: { items: [{ id: 1, name: "txkj", alias: "管理员", end_time: null, role: "管理员" }] },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/accounts",
-        summary: "创建账号",
-        description: "需要 account_manage 权限。role 可选：观察者/编辑者/管理员。",
-        body: { name: "newuser", password: "123456", alias: "新用户", role: "编辑者" },
-        response: { item: { id: 2, name: "newuser", alias: "新用户", end_time: null, role: "编辑者" } },
-        auth: true,
-      },
-      {
-        method: "PUT",
-        path: "/api/accounts/{account_id}",
-        summary: "更新账号",
-        description: "需要 account_manage 权限。",
-        pathParams: { account_id: "2" },
-        body: { name: "newuser", password: "newpass", alias: "改名", role: "观察者" },
-        response: { item: { id: 2, name: "newuser", alias: "改名", end_time: null, role: "观察者" } },
-        auth: true,
-      },
-      {
-        method: "POST",
-        path: "/api/accounts/{account_id}/disable",
-        summary: "停用账号",
-        description: "需要 account_manage 权限。设置账号 end_time 为当前时间。",
-        pathParams: { account_id: "2" },
-        response: { item: { id: 2, name: "newuser", alias: "改名", end_time: "2026-07-10 12:00:00", role: "观察者" } },
-        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("DELETE", "/api/datasets/1", headers=headers)`,
       },
     ],
   },
 ];
 
+// Python util 代码片段（展示在页面顶部）
+const PYTHON_UTIL_CODE = `#!/usr/bin/env python3
+"""TurbineLabelStudio Public API 调用工具"""
+
+import json, os
+from pathlib import Path
+from urllib import error, parse, request
+
+BASE_URL = os.environ.get("TLS_BASE_URL", "http://127.0.0.1:8765").rstrip("/")
+USERNAME = os.environ.get("TLS_USERNAME", "txkj")
+PASSWORD = os.environ.get("TLS_PASSWORD", "txkj")
+OUTPUT_DIR = Path(os.environ.get("TLS_OUTPUT_DIR", "output"))
+
+
+def api_url(path, query=None):
+    url = BASE_URL + path
+    if query:
+        url += "?" + parse.urlencode(query)
+    return url
+
+
+def request_json(method, path, payload=None, headers=None, query=None):
+    body = None
+    req_headers = {"Accept": "application/json"}
+    if headers:
+        req_headers.update(headers)
+    if payload is not None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+    req = request.Request(api_url(path, query), data=body, headers=req_headers, method=method)
+    try:
+        with request.urlopen(req, timeout=120) as resp:
+            text = resp.read().decode("utf-8")
+            return resp.status, json.loads(text) if text else {}
+    except error.HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = {"raw": text}
+        return exc.code, data
+
+
+def download_file(path, save_name, headers=None, query=None):
+    req_headers = {}
+    if headers:
+        req_headers.update(headers)
+    req = request.Request(api_url(path, query), headers=req_headers, method="GET")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    save_path = OUTPUT_DIR / save_name
+    try:
+        with request.urlopen(req, timeout=300) as resp:
+            save_path.write_bytes(resp.read())
+            return resp.status, save_path
+    except error.HTTPError as exc:
+        text = exc.read().decode("utf-8")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = {"raw": text}
+        return exc.code, data
+
+
+def login_headers():
+    status, data = request_json("POST", "/api/login",
+        payload={"name": USERNAME, "password": PASSWORD})
+    if status != 200:
+        raise RuntimeError(f"登录失败 status={status} data={data}")
+    return {
+        "X-User-Id": str(data["user"]["id"]),
+        "X-Session-Id": data["session_id"],
+    }`;
+
 // =============================================================================
 // 渲染
 // =============================================================================
-
-let currentTryApi = null;
 
 function renderApiDocs() {
   const toc = document.getElementById("apiToc");
@@ -336,33 +273,48 @@ function renderApiDocs() {
     return { ...g, apis: filtered };
   }).filter(g => g.apis.length > 0);
 
-  // TOC
+  // TOC — 使用 click 事件避免浏览器锚点滚动导致侧栏位移
   toc.innerHTML = filteredGroups.map(g =>
     `<div class="toc-group">
-      <a class="toc-group-link" href="#api-group-${g.id}">${g.title}</a>
-      ${g.apis.map(a => `<a class="toc-item" href="#api-${slug(a)}"><span class="method-tag method-${a.method.toLowerCase()}">${a.method}</span>${a.summary}</a>`).join("")}
+      <a class="toc-group-link" data-target="api-group-${g.id}">${g.title}</a>
+      ${g.apis.map(a => `<a class="toc-item" data-target="api-${slug(a)}"><span class="method-tag method-${a.method.toLowerCase()}">${a.method}</span>${a.summary}</a>`).join("")}
     </div>`
   ).join("");
 
+  // 绑定 TOC 点击事件——在右侧面板内滚动，左侧导航固定不动
+  const scrollContainer = detail;  // api-detail 是独立滚动容器
+  toc.querySelectorAll('[data-target]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.getElementById(el.dataset.target);
+      if (target && scrollContainer) {
+        const targetRect = target.getBoundingClientRect();
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const offset = targetRect.top - containerRect.top - 8;
+        scrollContainer.scrollBy({ top: offset, behavior: 'smooth' });
+      }
+    });
+  });
+
   // Detail
-  detail.innerHTML = filteredGroups.map(g => `
+  detail.innerHTML = `
+    <div class="api-util-section">
+      <h2>🐍 Python 工具模块</h2>
+      <p class="muted">以下代码可直接复制保存为 <code>tls_client.py</code>，所有 API 调用示例均基于此模块。</p>
+      <pre class="api-code python-code">${escapeHtml(PYTHON_UTIL_CODE)}</pre>
+    </div>
+    ${filteredGroups.map(g => `
     <div class="api-group" id="api-group-${g.id}">
       <h2 class="api-group-title">${g.title}</h2>
       ${g.description ? `<p class="muted" style="margin:0 0 12px">${g.description}</p>` : ""}
       ${g.apis.map(a => renderApiCard(a)).join("")}
     </div>
-  `).join("");
+  `).join("")}`;
 
-  // Re-attach try buttons
-  document.querySelectorAll(".try-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const groupId = btn.dataset.group;
-      const apiIndex = parseInt(btn.dataset.index);
-      const group = API_GROUPS.find(g => g.id === groupId);
-      if (group && group.apis[apiIndex]) {
-        openTry(group.apis[apiIndex]);
-      }
-    });
+  // Syntax highlight for Python code blocks
+  document.querySelectorAll(".python-code").forEach(el => {
+    el.style.whiteSpace = "pre-wrap";
+    el.style.wordBreak = "break-word";
   });
 }
 
@@ -383,16 +335,12 @@ function renderApiCard(api) {
     queryStr = "?" + Object.entries(api.query).map(([k, v]) => `${k}=<b class="path-param">${escapeHtml(String(v))}</b>`).join("&");
   }
 
-  const groupId = api._groupId || "";
-  const apiIndex = api._index ?? -1;
-
   return `
     <div class="api-card" id="api-${slug(api)}">
       <div class="api-card-head">
         <span class="method-tag method-${api.method.toLowerCase()}">${api.method}</span>
         <code class="api-path">${fullPath}${queryStr}</code>
         ${api.auth !== false ? '<span class="auth-badge">🔒 需登录</span>' : '<span class="auth-badge public-badge">🔓 公开</span>'}
-        <button class="try-btn secondary" data-group="${escapeHtml(groupId)}" data-index="${apiIndex}">▶ Try</button>
       </div>
       <div class="api-card-body">
         <p class="muted" style="margin:0 0 12px;">${api.description}</p>
@@ -432,6 +380,12 @@ function renderApiCard(api) {
           <strong class="api-section-title">Response</strong>
           <p class="muted" style="margin:0;">二进制文件流（JPEG / WAV / ZIP）</p>
         </div>` : ""}
+
+        ${api.pythonExample ? `
+        <div class="api-section python-example">
+          <strong class="api-section-title">🐍 Python 调用示例</strong>
+          <pre class="api-code python-code">${escapeHtml(api.pythonExample)}</pre>
+        </div>` : ""}
       </div>
     </div>
   `;
@@ -441,157 +395,3 @@ function filterApis() {
   renderApiDocs();
 }
 
-// =============================================================================
-// 内联 Try It 功能
-// =============================================================================
-
-function openTry(api) {
-  currentTryApi = api;
-  const panel = document.getElementById("tryPanel");
-  const title = document.getElementById("tryTitle");
-  const pathEl = document.getElementById("tryPath");
-
-  panel.style.display = "";
-  title.textContent = `${api.method} ${api.summary}`;
-  pathEl.textContent = api.path;
-
-  let paramHtml = "";
-
-  // path params
-  if (api.pathParams) {
-    for (const [k, v] of Object.entries(api.pathParams)) {
-      paramHtml += `<label>路径参数 <code>${k}</code><input type="text" id="trypp-${k}" value="${escapeHtml(String(v))}"></label>`;
-    }
-  }
-
-  // query params
-  if (api.query && Object.keys(api.query).length) {
-    for (const [k, v] of Object.entries(api.query)) {
-      paramHtml += `<label>Query <code>${k}</code><input type="text" id="tryqp-${k}" value="${escapeHtml(String(v))}"></label>`;
-    }
-  }
-
-  // body
-  if (api.body) {
-    paramHtml += `<label>Request Body (JSON)<textarea id="tryBody" rows="6">${JSON.stringify(api.body, null, 2)}</textarea></label>`;
-  }
-
-  document.getElementById("tryParams").innerHTML = paramHtml || '<p class="muted">该接口无需额外参数。</p>';
-  document.getElementById("tryStatus").textContent = "";
-  document.getElementById("tryResponse").style.display = "none";
-
-  panel.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-function closeTry() {
-  document.getElementById("tryPanel").style.display = "none";
-  currentTryApi = null;
-}
-
-async function sendTry() {
-  const api = currentTryApi;
-  if (!api) return;
-
-  const statusEl = document.getElementById("tryStatus");
-  const respEl = document.getElementById("tryResponse");
-  const btn = document.getElementById("trySendBtn");
-  statusEl.textContent = "请求中...";
-  statusEl.className = "status";
-  respEl.style.display = "none";
-  btn.disabled = true;
-
-  try {
-    // Build path by replacing pathParams
-    let path = api.path;
-    if (api.pathParams) {
-      for (const k of Object.keys(api.pathParams)) {
-        const el = document.getElementById("trypp-" + k);
-        path = path.replace(`{${k}}`, el ? el.value : "");
-      }
-    }
-
-    // Build query string
-    const queryParts = [];
-    if (api.query) {
-      for (const k of Object.keys(api.query)) {
-        const el = document.getElementById("tryqp-" + k);
-        if (el && el.value) {
-          queryParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(el.value)}`);
-        }
-      }
-    }
-    const queryStr = queryParts.length ? "?" + queryParts.join("&") : "";
-
-    // Headers
-    const user = getUser();
-    const sessionId = localStorage.getItem("tls_session_id");
-    const headers = {};
-    if (user && sessionId) {
-      headers["X-User-Id"] = String(user.id);
-      headers["X-Session-Id"] = sessionId;
-    }
-    headers["Accept"] = "application/json";
-
-    // Body
-    let body = null;
-    if (api.body) {
-      const bodyEl = document.getElementById("tryBody");
-      if (bodyEl) {
-        try {
-          JSON.parse(bodyEl.value); // validate
-          body = bodyEl.value;
-          headers["Content-Type"] = "application/json";
-        } catch (e) {
-          statusEl.textContent = "JSON 格式错误";
-          statusEl.className = "status bad";
-          btn.disabled = false;
-          return;
-        }
-      }
-    }
-
-    // For binary endpoints, don't try to parse JSON
-    const fetchOpts = { method: api.method, headers };
-    if (body) fetchOpts.body = body;
-
-    const resp = await fetch(path + queryStr, fetchOpts);
-    const contentType = resp.headers.get("content-type") || "";
-
-    let result;
-    if (contentType.includes("application/json")) {
-      result = await resp.json();
-    } else {
-      const blob = await resp.blob();
-      result = {
-        status: resp.status,
-        contentType: contentType,
-        size: blob.size,
-        note: "二进制响应，此处仅显示元数据。",
-      };
-    }
-
-    statusEl.textContent = resp.ok ? `✓ ${resp.status}` : `✗ ${resp.status}`;
-    statusEl.className = resp.ok ? "status ok" : "status bad";
-    respEl.textContent = JSON.stringify(result, null, 2);
-    respEl.style.display = "";
-  } catch (err) {
-    statusEl.textContent = "网络错误";
-    statusEl.className = "status bad";
-    respEl.textContent = String(err);
-    respEl.style.display = "";
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-// =============================================================================
-// 初始化：给每个 API 标记 groupId 和 index，方便 try 按钮定位
-// =============================================================================
-(function initApiMeta() {
-  API_GROUPS.forEach(group => {
-    group.apis.forEach((api, idx) => {
-      api._groupId = group.id;
-      api._index = idx;
-    });
-  });
-})();
