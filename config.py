@@ -2,7 +2,10 @@
 
 import os
 
-TURBINE_LABEL_DATA_DIR = "/usr/data/fengji_sewrver_logs"
+if os.path.exists("/usr/data/fengji_sewrver_logs"):
+    TURBINE_LABEL_DATA_DIR = "/usr/data/fengji_sewrver_logs"
+else:
+    TURBINE_LABEL_DATA_DIR = "/Volumes/Jokker/Code/TurbineLabelStudio/logs"
 
 LOCAL_LABEL_STUDIO_DB = os.path.join(TURBINE_LABEL_DATA_DIR, "label_studio.db")
 

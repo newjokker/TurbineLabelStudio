@@ -41,6 +41,18 @@
             <div class="channel-button-list" id="channelButtonList"></div>
           </div>
         </div>
+        <section class="viewer-comment-panel" aria-label="评论管理">
+          <div class="comment-panel-title">
+            <strong>评论管理</strong>
+            <span id="commentTargetText">未选择标注</span>
+          </div>
+          <textarea id="annotationCommentInput" placeholder="选中标注后可查看评论，进入编辑模式后可修改"></textarea>
+          <div class="comment-actions">
+            <button class="secondary" id="saveAnnotationCommentBtn" type="button" disabled>保存评论</button>
+            <button class="secondary" id="clearAnnotationCommentBtn" type="button" disabled>清空评论</button>
+          </div>
+          <div class="comment-meta" id="commentMetaText">暂无评论</div>
+        </section>
         <section class="buc-rail" aria-label="BUC 列表">
           <div class="buc-rail-title">BUC</div>
           <div class="buc-list" id="bucList"></div>
@@ -140,6 +152,11 @@
     const editLabelSelect = document.getElementById('editLabelSelect');
     const editLabelButton = document.getElementById('editLabelButton');
     const editLabelMenu = document.getElementById('editLabelMenu');
+    const annotationCommentInput = document.getElementById('annotationCommentInput');
+    const saveAnnotationCommentBtn = document.getElementById('saveAnnotationCommentBtn');
+    const clearAnnotationCommentBtn = document.getElementById('clearAnnotationCommentBtn');
+    const commentTargetText = document.getElementById('commentTargetText');
+    const commentMetaText = document.getElementById('commentMetaText');
     const CHANNEL_ORDER = ['B1A', 'B1B', 'B2A', 'B2B', 'B3A', 'B3B'];
     const IMAGE_WIDTH = 1200;
 
@@ -261,6 +278,39 @@
       return item.label_color || '#0f5f8a';
     }
 
+    function commentFor(item) {
+      const comment = item?.extra_info?.comment;
+      if (comment && typeof comment === 'object') {
+        return {
+          text: comment.text || '',
+          update_by: comment.update_by || '',
+          update_time: comment.update_time || ''
+        };
+      }
+      if (typeof comment === 'string') {
+        return { text: comment, update_by: '', update_time: '' };
+      }
+      return { text: '', update_by: '', update_time: '' };
+    }
+
+    function selectedAnnotation() {
+      return (state.data?.annotations || []).find(item => item.id === state.selectedId) || null;
+    }
+
+    function renderCommentEditor() {
+      const item = selectedAnnotation();
+      const comment = commentFor(item);
+      const editable = Boolean(state.editMode && state.selectedId);
+      annotationCommentInput.value = comment.text || '';
+      annotationCommentInput.disabled = !editable;
+      saveAnnotationCommentBtn.disabled = !editable;
+      clearAnnotationCommentBtn.disabled = !editable || !comment.text;
+      commentTargetText.textContent = item ? `#${item.id} ${item.label || ''}` : '未选择标注';
+      commentMetaText.textContent = comment.update_by || comment.update_time
+        ? [comment.update_by, comment.update_time].filter(Boolean).join(' · ')
+        : (comment.text ? '已有评论' : '暂无评论');
+    }
+
     function renderBoxes() {
       const annotations = state.data?.annotations || [];
       boxLayer.setAttribute('viewBox', '0 0 1200 1200');
@@ -303,12 +353,16 @@
       annotationList.innerHTML = annotations.map(item => {
         const selected = item.id === state.selectedId;
         const label = item.label || `label_id=${item.label_id}`;
+        const comment = commentFor(item);
+        const commentMeta = [comment.update_by, comment.update_time].filter(Boolean).join(' · ');
         return `
           <button class="annotation-row ${selected ? 'active' : ''}" data-id="${item.id}">
             <span class="swatch" style="--chip:${escapeHtml(colorFor(item))}"></span>
             <span>
               <strong>${escapeHtml(label)}</strong>
               <small>#${item.id} · ${Math.round(item.x1)},${Math.round(item.y1)} - ${Math.round(item.x2)},${Math.round(item.y2)}</small>
+              ${comment.text ? `<small class="annotation-comment">评论：${escapeHtml(comment.text)}</small>` : ""}
+              ${commentMeta ? `<small class="annotation-comment-meta">${escapeHtml(commentMeta)}</small>` : ""}
             </span>
           </button>
         `;
@@ -317,6 +371,7 @@
         node.addEventListener('click', () => selectAnnotation(Number(node.dataset.id)));
       });
       deleteAnnotationBtn.disabled = !state.editMode || !state.selectedId;
+      renderCommentEditor();
     }
 
     function renderEditControls() {
@@ -326,6 +381,7 @@
       deleteAnnotationBtn.classList.toggle('hidden', !state.editMode);
       deleteAnnotationBtn.disabled = !state.editMode || !state.selectedId;
       imageCanvas.classList.toggle('editing', state.editMode);
+      renderCommentEditor();
     }
 
     function renderEditLabelSelect() {
@@ -761,6 +817,29 @@
       }
     }
 
+    async function saveSelectedAnnotationComment(commentText) {
+      if (!state.editMode || !state.selectedId) return;
+      try {
+        const data = await apiFetch(`/api/annotations/${state.selectedId}/comment`, {
+          method: 'PUT',
+          body: JSON.stringify({ comment: commentText })
+        });
+        const index = (state.data?.annotations || []).findIndex(item => item.id === state.selectedId);
+        if (index >= 0 && data.item) {
+          state.data.annotations[index] = {
+            ...state.data.annotations[index],
+            ...data.item,
+            label: state.data.annotations[index].label,
+            label_color: state.data.annotations[index].label_color
+          };
+        }
+        renderAnnotationList();
+        setStatus(commentText.trim() ? '评论已保存' : '评论已清空', 'ok');
+      } catch (error) {
+        setStatus(error.message, 'bad');
+      }
+    }
+
     editModeBtn.addEventListener('click', async () => {
       if (!state.editMode) {
         try {
@@ -796,6 +875,19 @@
       } catch (error) {
         setStatus(error.message, 'bad');
       }
+    });
+
+    saveAnnotationCommentBtn.addEventListener('click', async () => {
+      await saveSelectedAnnotationComment(annotationCommentInput.value);
+    });
+
+    clearAnnotationCommentBtn.addEventListener('click', async () => {
+      annotationCommentInput.value = '';
+      await saveSelectedAnnotationComment('');
+    });
+
+    annotationCommentInput.addEventListener('input', () => {
+      clearAnnotationCommentBtn.disabled = !state.editMode || !state.selectedId || !annotationCommentInput.value.trim();
     });
 
     boxLayer.addEventListener('pointerdown', event => {

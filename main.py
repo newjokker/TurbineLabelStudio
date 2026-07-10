@@ -66,6 +66,10 @@ class AnnotationPayload(BaseModel):
     extra_info: Optional[Dict[str, Any]] = None
 
 
+class AnnotationCommentPayload(BaseModel):
+    comment: str = ""
+
+
 class AnnotationLockPayload(BaseModel):
     buc: str
     func: str
@@ -707,6 +711,51 @@ def delete_annotation(
     except SQLAlchemyError as exc:
         session.rollback()
         raise HTTPException(status_code=500, detail="删除标注失败") from exc
+    finally:
+        session.close()
+
+
+@app.put("/api/annotations/{annotation_id}/comment")
+def update_annotation_comment(
+    annotation_id: int,
+    payload: AnnotationCommentPayload,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(actor, "label_write")
+        record = session.query(Annotation).filter_by(id=annotation_id).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="标注不存在")
+        _require_annotation_lock(session, actor, x_session_id, record.buc, record.func)
+        before = record.to_dict()
+        extra_info = json_value(record.extra_info)
+        if not isinstance(extra_info, dict):
+            extra_info = {}
+        comment_text = (payload.comment or "").strip()
+        if comment_text:
+            extra_info["comment"] = {
+                "text": comment_text,
+                "update_id": actor.id,
+                "update_by": actor.alias or actor.name,
+                "update_time": _format_dt(beijing_now()),
+            }
+        else:
+            extra_info.pop("comment", None)
+        record.extra_info = json_text(extra_info)
+        record.update_id = actor.id
+        record.update_time = beijing_now()
+        session.flush()
+        after = record.to_dict()
+        _log(session, actor.id, "update", "annotation_comment", {"before": before, "after": after})
+        session.commit()
+        session.refresh(record)
+        return {"item": record.to_dict()}
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="更新评论失败") from exc
     finally:
         session.close()
 
