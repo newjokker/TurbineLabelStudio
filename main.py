@@ -1186,4 +1186,4 @@ if __name__ == "__main__":
     except ImportError as exc:
         raise SystemExit("缺少 uvicorn，请先执行：python3 -m pip install uvicorn") from exc
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8765, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=12501, reload=False)
