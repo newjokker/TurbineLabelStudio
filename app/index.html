@@ -9,31 +9,101 @@
 <body>
   <header id="siteHeader"></header>
   <main class="page">
-    <section class="grid-links">
-      <a class="card" href="/annotation_view.html">
-        <span class="card-kicker">标注</span>
-        <strong>标注展示</strong>
-        <span>查看 BUC 图片、标注框、标签结果和对应六个通道音频。</span>
-      </a>
-      <a class="card" href="/datasets.html">
-        <span class="card-kicker">分组</span>
-        <strong>数据集</strong>
-        <span>查看数据集和 BUC 数量；管理员可新增、删除数据集。</span>
-      </a>
-      <a class="card" href="/labels.html">
-        <span class="card-kicker">配置</span>
-        <strong>标签管理</strong>
-        <span>查看、编辑标签名称、描述、标注方法和 extra_info。</span>
-      </a>
-      <a class="card" href="/accounts.html">
-        <span class="card-kicker">权限</span>
-        <strong>账号管理</strong>
-        <span>查看账号和角色；管理员可新增、编辑、停用账号。</span>
-      </a>
+
+    <!-- Tab Navigation -->
+    <div class="api-tabs">
+      <button class="api-tab active" data-tab="nav">功能导航</button>
+      <button class="api-tab" data-tab="docs">API 文档</button>
+    </div>
+
+    <!-- ==================== 功能导航面板 ==================== -->
+    <section class="tab-panel active" id="panel-nav">
+      <div class="grid-links">
+        <a class="card" href="/annotation_view.html">
+          <span class="card-kicker">标注</span>
+          <strong>标注展示</strong>
+          <span>查看 BUC 图片、标注框、标签结果和对应六个通道音频。</span>
+        </a>
+        <a class="card" href="/datasets.html">
+          <span class="card-kicker">分组</span>
+          <strong>数据集</strong>
+          <span>查看数据集和 BUC 数量；管理员可新增、删除数据集。</span>
+        </a>
+        <a class="card" href="/labels.html">
+          <span class="card-kicker">配置</span>
+          <strong>标签管理</strong>
+          <span>查看、编辑标签名称、描述、标注方法和 extra_info。</span>
+        </a>
+        <a class="card" href="/accounts.html">
+          <span class="card-kicker">权限</span>
+          <strong>账号管理</strong>
+          <span>查看账号和角色；管理员可新增、编辑、停用账号。</span>
+        </a>
+      </div>
     </section>
+
+    <!-- ==================== API 文档面板 ==================== -->
+    <section class="tab-panel" id="panel-docs">
+      <!-- 搜索和概览 -->
+      <div class="panel">
+        <div class="page-head">
+          <div class="page-title">
+            <strong>📘 TurbineLabelStudio API</strong>
+            <span>提供标注数据、音频文件、图片与数据集管理的开放接口。所有 Public API 需要登录后携带 Header 鉴权。</span>
+          </div>
+          <div class="page-tools">
+            <input type="text" id="apiSearch" placeholder="搜索 API..." style="width:240px;min-height:36px;" oninput="filterApis()">
+          </div>
+        </div>
+      </div>
+
+      <div class="api-sidebar-layout">
+        <!-- 左侧目录 -->
+        <nav class="api-toc" id="apiToc"></nav>
+
+        <!-- 右侧 API 列表 -->
+        <div class="api-detail" id="apiDetail"></div>
+      </div>
+
+      <!-- 内联测试面板 -->
+      <div class="panel" id="tryPanel" style="display:none;">
+        <div class="page-head">
+          <div class="page-title">
+            <strong id="tryTitle">Try It</strong>
+            <span id="tryPath"></span>
+          </div>
+          <div class="page-tools">
+            <button class="secondary" onclick="closeTry()">关闭</button>
+          </div>
+        </div>
+        <div style="padding:16px;display:grid;gap:12px;">
+          <div id="tryParams"></div>
+          <div style="display:flex;gap:8px;">
+            <button id="trySendBtn" onclick="sendTry()">发送请求</button>
+            <span id="tryStatus" class="status"></span>
+          </div>
+          <pre id="tryResponse" style="background:var(--panel-soft);border:1px solid var(--line);border-radius:6px;padding:12px;overflow:auto;max-height:400px;font-size:13px;display:none;"></pre>
+        </div>
+      </div>
+    </section>
+
   </main>
+
   <script src="/static/common.js"></script>
+  <script src="/static/api_docs.js"></script>
   <script>
+    // Tab switching
+    document.querySelectorAll('.api-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.api-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+        if (btn.dataset.tab === 'docs') renderApiDocs();
+      });
+    });
+
+    // Login & header
     const user = requireLogin();
     renderHeader('index');
     apiFetch('/api/permissions').then(data => {
