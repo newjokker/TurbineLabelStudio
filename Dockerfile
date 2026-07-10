@@ -15,7 +15,10 @@ RUN pip install -i https://mirrors.aliyun.com/pypi/simple \
     fastapi \
     uvicorn \
     requests \
-    fabric
+    fabric \
+    numpy \
+    soundfile \
+    scipy
 
 COPY ./ /usr/src/app
 

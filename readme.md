@@ -5,15 +5,15 @@
 
 ### docker build
 
-* docker build -t fengji_data_server:v0.1.6 -f Dockerfile .
+* docker build -t turbin_label_studio:v0.1.1 -f Dockerfile .
 
 ### docker 启动服务
 
-* docker rm -f fengji_data_upload_server
+* docker rm -f turbin_label_studio_server
 
-* docker run --restart=always --name=fengji_data_upload_server  -v /etc/localtime:/etc/localtime  -v /usr/data/fengji_data_server_database:/usr/data/fengji_sewrver_logs  -p 12501:12501  -it  fengji_data_server:v0.1.6 /bin/bash 
+* docker run --restart=always --name=turbin_label_studio_server  -v /etc/localtime:/etc/localtime  -v /usr/data/turbin_label_studio_log:/usr/data/fengji_sewrver_logs  -p 12502:12502  -it  turbin_label_studio:v0.1.1 /bin/bash 
 
-* docker run --restart=always --name=fengji_data_upload_server  -v /etc/localtime:/etc/localtime  -v /usr/data/fengji_data_server_database:/usr/data/fengji_sewrver_logs  -p 12501:12501  -d  fengji_data_server:v0.1.6
+* docker run --restart=always --name=turbin_label_studio_server  -v /etc/localtime:/etc/localtime  -v /usr/data/turbin_label_studio_log:/usr/data/fengji_sewrver_logs  -p 12502:12502  -d  turbin_label_studio:v0.1.1
 
 
 * 服务默认放在 69 服务器上
@@ -23,5 +23,5 @@
 ### 版本
 
 * v0.1
-    * v0.1.1    
+    * v0.1.1   * 开始这个项目 
 
