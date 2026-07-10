@@ -261,6 +261,7 @@ def login_headers():
 function renderApiDocs() {
   const toc = document.getElementById("apiToc");
   const detail = document.getElementById("apiDetail");
+  const stats = document.getElementById("apiStats");
   const searchTerm = (document.getElementById("apiSearch")?.value || "").toLowerCase().trim();
 
   let filteredGroups = API_GROUPS.map(g => {
@@ -273,33 +274,23 @@ function renderApiDocs() {
     return { ...g, apis: filtered };
   }).filter(g => g.apis.length > 0);
 
-  // TOC — 使用 click 事件避免浏览器锚点滚动导致侧栏位移
-  toc.innerHTML = filteredGroups.map(g =>
-    `<div class="toc-group">
-      <a class="toc-group-link" data-target="api-group-${g.id}">${g.title}</a>
-      ${g.apis.map(a => `<a class="toc-item" data-target="api-${slug(a)}"><span class="method-tag method-${a.method.toLowerCase()}">${a.method}</span>${a.summary}</a>`).join("")}
-    </div>`
-  ).join("");
+  const visibleApiCount = filteredGroups.reduce((sum, g) => sum + g.apis.length, 0);
+  const methodCounts = filteredGroups.flatMap(g => g.apis).reduce((acc, api) => {
+    acc[api.method] = (acc[api.method] || 0) + 1;
+    return acc;
+  }, {});
 
-  // 绑定 TOC 点击事件——在右侧面板内滚动，左侧导航固定不动
-  const scrollContainer = detail;  // api-detail 是独立滚动容器
-  toc.querySelectorAll('[data-target]').forEach(el => {
-    el.addEventListener('click', e => {
-      e.preventDefault();
-      const target = document.getElementById(el.dataset.target);
-      if (target && scrollContainer) {
-        const targetRect = target.getBoundingClientRect();
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const offset = targetRect.top - containerRect.top - 8;
-        scrollContainer.scrollBy({ top: offset, behavior: 'smooth' });
-      }
-    });
-  });
+  if (stats) {
+    stats.innerHTML = `
+      <span class="api-stat"><strong>${visibleApiCount}</strong> 接口</span>
+      ${Object.entries(methodCounts).map(([method, count]) => `<span class="api-stat"><strong>${count}</strong> ${method}</span>`).join("")}
+    `;
+  }
 
-  // Detail
+  // Detail first. The left catalog click handler scrolls only this right panel.
   detail.innerHTML = `
-    <div class="api-util-section">
-      <h2>🐍 Python 工具模块</h2>
+    <div class="api-util-section" id="api-util-python">
+      <h2>Python 工具模块</h2>
       <p class="muted">以下代码可直接复制保存为 <code>tls_client.py</code>，所有 API 调用示例均基于此模块。</p>
       <pre class="api-code python-code">${escapeHtml(PYTHON_UTIL_CODE)}</pre>
     </div>
@@ -311,11 +302,48 @@ function renderApiDocs() {
     </div>
   `).join("")}`;
 
+  // TOC uses data-target instead of native anchor jumping so the outer page and
+  // the left catalog keep their own scroll positions.
+  toc.innerHTML = `
+    <div class="toc-title">
+      <span>接口目录</span>
+      <span class="toc-count">${visibleApiCount} 项</span>
+    </div>
+    <a class="toc-group-link" href="#api-util-python" data-target="api-util-python">Python 工具模块</a>
+    ${filteredGroups.map(g =>
+      `<div class="toc-group">
+        <a class="toc-group-link" href="#api-group-${g.id}" data-target="api-group-${g.id}">${g.title}</a>
+        ${g.apis.map(a => {
+          const targetId = `api-${slug(a)}`;
+          return `<a class="toc-item" href="#${targetId}" data-target="${targetId}"><span class="method-tag method-${a.method.toLowerCase()}">${a.method}</span>${a.summary}</a>`;
+        }).join("")}
+      </div>`
+    ).join("")}
+  `;
+
+  // 绑定 TOC 点击事件——在右侧面板内滚动，左侧导航固定不动
+  toc.querySelectorAll('[data-target]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.preventDefault();
+      scrollApiDetailTo(el.dataset.target);
+      history.replaceState(null, "", `#${el.dataset.target}`);
+    });
+  });
+
   // Syntax highlight for Python code blocks
   document.querySelectorAll(".python-code").forEach(el => {
     el.style.whiteSpace = "pre-wrap";
     el.style.wordBreak = "break-word";
   });
+
+  bindApiDetailScrollSpy();
+
+  const hashTarget = getApiHashTarget();
+  if (hashTarget) {
+    requestAnimationFrame(() => scrollApiDetailTo(hashTarget, "auto"));
+  } else {
+    setActiveTocLink("api-util-python");
+  }
 }
 
 function slug(api) {
@@ -395,3 +423,69 @@ function filterApis() {
   renderApiDocs();
 }
 
+function scrollApiDetailTo(targetId, behavior = "smooth") {
+  const detail = document.getElementById("apiDetail");
+  const target = document.getElementById(targetId);
+  if (!detail || !target) return;
+
+  const targetRect = target.getBoundingClientRect();
+  const detailRect = detail.getBoundingClientRect();
+  const top = detail.scrollTop + targetRect.top - detailRect.top - 8;
+  detail.scrollTo({ top, behavior });
+  setActiveTocLink(targetId);
+}
+
+function setActiveTocLink(targetId) {
+  document.querySelectorAll("#apiToc [data-target]").forEach(el => {
+    el.classList.toggle("active", el.dataset.target === targetId);
+  });
+}
+
+function bindApiDetailScrollSpy() {
+  const detail = document.getElementById("apiDetail");
+  if (!detail) return;
+
+  detail.onscroll = () => {
+    const targets = Array.from(document.querySelectorAll("#apiToc [data-target]"))
+      .map(el => document.getElementById(el.dataset.target))
+      .filter(Boolean);
+    const nearBottom = detail.scrollTop + detail.clientHeight >= detail.scrollHeight - 4;
+    if (nearBottom && targets.length) {
+      setActiveTocLink(targets[targets.length - 1].id);
+      return;
+    }
+
+    const detailTop = detail.getBoundingClientRect().top;
+    let active = targets[0]?.id || "";
+
+    for (const target of targets) {
+      if (target.getBoundingClientRect().top - detailTop <= 16) {
+        active = target.id;
+      } else {
+        break;
+      }
+    }
+
+    if (active) setActiveTocLink(active);
+  };
+}
+
+function getApiHashTarget() {
+  const rawHash = decodeURIComponent(location.hash.replace(/^#/, ""));
+  if (!rawHash) return "";
+  if (document.getElementById(rawHash)) return rawHash;
+  if (document.getElementById(`api-group-${rawHash}`)) return `api-group-${rawHash}`;
+
+  const normalized = rawHash.toLowerCase();
+  const api = API_GROUPS.flatMap(g => g.apis).find(item => {
+    const pathAlias = item.path
+      .replace(/^\/+/, "")
+      .replace(/[{}]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase();
+    return slug(item) === normalized || pathAlias === normalized || item.path.toLowerCase().endsWith(`/${normalized}`);
+  });
+
+  return api ? `api-${slug(api)}` : "";
+}

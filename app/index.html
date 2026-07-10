@@ -75,14 +75,7 @@
           if (!panel.querySelector('iframe')) {
             const iframe = document.createElement('iframe');
             iframe.src = '/api_docs.html';
-            iframe.style.height = 'calc(100vh - 200px)';
-            iframe.onload = () => {
-              // 调整 iframe 高度适应内容
-              try {
-                const doc = iframe.contentDocument || iframe.contentWindow.document;
-                iframe.style.height = Math.max(doc.body.scrollHeight + 40, 600) + 'px';
-              } catch(e) { /* cross-origin 限制 */ }
-            };
+            iframe.style.height = 'calc(100vh - 180px)';
             panel.appendChild(iframe);
           }
         }
