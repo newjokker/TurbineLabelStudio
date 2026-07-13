@@ -530,20 +530,27 @@ def annotation_view_data(
     try:
         _get_actor(session, x_user_id, x_session_id)
         rows = (
-            session.query(Annotation, Label)
+            session.query(Annotation, Label, UserAccount)
             .outerjoin(Label, Label.id == Annotation.label_id)
+            .outerjoin(UserAccount, UserAccount.id == Annotation.update_id)
             .filter(Annotation.buc == buc, Annotation.func == func_name)
             .order_by(Annotation.id)
             .all()
         )
         annotations = []
-        for record, label_record in rows:
+        for record, label_record, user_record in rows:
             label_extra = json_value(label_record.extra_info) if label_record else {}
+            update_alias = user_record.alias if user_record else None
+            update_name = user_record.name if user_record else None
             annotations.append(
                 {
                     **record.to_dict(),
                     "label": label_record.label if label_record else None,
+                    "label_des": label_record.des if label_record else None,
                     "label_color": label_extra.get("color", "#0f5f8a") if isinstance(label_extra, dict) else "#0f5f8a",
+                    "update_by": update_alias or update_name,
+                    "update_alias": update_alias,
+                    "update_name": update_name,
                 }
             )
 

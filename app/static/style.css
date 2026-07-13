@@ -556,6 +556,7 @@ td code {
   gap: 10px;
 }
 .viewer-main-panel {
+  --annotation-view-size: min(1080px, calc(var(--viewer-content-height) - 68px), calc(100vw - 650px));
   min-width: 0;
   padding: 10px;
   border-radius: 0;
@@ -569,11 +570,15 @@ td code {
   grid-column: 2;
   min-width: 0;
   width: 100%;
+  height: var(--annotation-view-size);
+  max-height: var(--annotation-view-size);
   margin-top: 34px;
   padding: 2px 0;
   display: grid;
+  grid-template-rows: auto minmax(46px, 120px) auto auto minmax(0, 1fr);
   gap: 8px;
   align-self: start;
+  overflow: hidden;
 }
 .comment-panel-title {
   display: flex;
@@ -601,7 +606,7 @@ td code {
 }
 .comment-card-list {
   min-height: 50px;
-  max-height: 190px;
+  max-height: none;
   overflow: auto;
   display: grid;
   gap: 6px;
@@ -649,8 +654,116 @@ td code {
   font-size: 13px;
   text-align: center;
 }
+.selected-annotation-panel {
+  min-height: 0;
+  margin-top: 10px;
+  border: 1px solid #ebe6dd;
+  border-radius: 6px;
+  background: rgba(251, 250, 248, 0.48);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.selected-info-head {
+  min-height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid #ebe6dd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.selected-info-head strong {
+  color: #77736b;
+  font-size: 12px;
+  font-weight: 650;
+}
+.selected-info-head span {
+  color: #a09a91;
+  font-size: 11px;
+  font-weight: 500;
+}
+.selected-info-grid {
+  padding: 8px 10px 10px;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.selected-reference-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #8a867e;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.selected-reference-table tbody + tbody {
+  border-top: 8px solid transparent;
+}
+.selected-reference-table th,
+.selected-reference-table td {
+  height: 24px;
+  padding: 4px 6px;
+  border: 1px solid #ebe6dd;
+  background: rgba(255, 255, 255, 0.56);
+  color: #8a867e;
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.selected-reference-table th {
+  width: 74px;
+  background: rgba(246, 245, 242, 0.68);
+  color: #9b968d;
+}
+.selected-reference-table td {
+  color: #77736b;
+}
+.selected-reference-group th {
+  height: 22px;
+  padding: 3px 6px;
+  border-color: #ebe6dd;
+  background: rgba(246, 245, 242, 0.82);
+  color: #969188;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.selected-reference-table .mono td,
+.selected-reference-table .wrap td {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+.selected-reference-table .wrap td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.selected-reference-swatch {
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border: 1px solid color-mix(in srgb, var(--chip) 70%, #8a867e);
+  border-radius: 3px;
+  background: var(--chip);
+  display: inline-block;
+  vertical-align: -1px;
+}
+.selected-info-empty {
+  min-height: 190px;
+  padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
 .media-layout {
-  --annotation-view-size: min(1080px, calc(var(--viewer-content-height) - 68px), calc(100vw - 650px));
   display: grid;
   grid-template-columns: var(--annotation-view-size) 44px;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1038,14 +1151,17 @@ td code {
     grid-template-columns: 1fr;
   }
   .viewer-main-panel {
+    --annotation-view-size: min(720px, calc(100vw - 32px));
     grid-template-columns: 1fr;
   }
   .viewer-comment-panel {
     grid-column: 1;
+    height: auto;
+    max-height: none;
     margin-top: 0;
+    overflow: visible;
   }
   .media-layout {
-    --annotation-view-size: min(720px, calc(100vw - 32px));
     grid-template-columns: minmax(0, 1fr);
     justify-content: stretch;
   }
@@ -1082,6 +1198,13 @@ td code {
   }
   .annotation-list {
     max-height: 300px;
+  }
+  .selected-info-grid {
+    padding: 8px;
+    overflow: visible;
+  }
+  .selected-reference-table th {
+    width: 66px;
   }
   .annotation-title-tools select {
     width: 130px;
