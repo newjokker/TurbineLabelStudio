@@ -88,6 +88,7 @@
                 <div class="label-dropdown-menu hidden" id="editLabelMenu"></div>
               </div>
             </label>
+            <span class="muted">Ctrl + Z：撤回刚才一次新增框或删除框</span>
           </div>
           <span class="status hidden" id="status"></span>
         </section>
@@ -128,7 +129,9 @@
       drawStart: null,
       lockHeartbeatTimer: null,
       lockedBuc: null,
-      lockedFunc: null
+      lockedFunc: null,
+      undoAction: null,
+      undoInProgress: false
     };
 
     const statusEl = document.getElementById('status');
@@ -173,6 +176,11 @@
     function clearStatus() {
       statusEl.className = 'status hidden';
       statusEl.textContent = '';
+    }
+
+    function clearUndoAction() {
+      state.undoAction = null;
+      state.undoInProgress = false;
     }
 
     function optionHasLabel(item, labelId) {
@@ -535,6 +543,7 @@
           state.drawStart = null;
           state.lockedBuc = null;
           state.lockedFunc = null;
+          clearUndoAction();
           stopLockHeartbeat();
           renderBoxes();
           renderEditControls();
@@ -575,6 +584,7 @@
       if (!state.editMode && !state.lockedBuc) return;
       state.editMode = false;
       state.drawStart = null;
+      clearUndoAction();
       await unlockCurrentImage();
       renderBoxes();
       renderEditControls();
@@ -609,6 +619,7 @@
     }
 
     async function switchImageSelection(updateSelection) {
+      clearUndoAction();
       const keepEditMode = state.editMode;
       if (keepEditMode) {
         state.drawStart = null;
@@ -646,6 +657,7 @@
     }
 
     async function moveOption(delta) {
+      clearUndoAction();
       const bucs = [...new Set(filteredOptions().map(item => item.buc))];
       if (!bucs.length) return;
       const current = bucs.indexOf(bucInput.value);
@@ -733,6 +745,7 @@
       editLabelMenu.classList.toggle('hidden');
     });
     async function handleOptionFilterChange() {
+      clearUndoAction();
       await leaveEditMode();
       renderOptions();
       const options = selectedBucOptions();
@@ -774,6 +787,11 @@
     document.addEventListener('keydown', event => {
       const tag = event.target?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && state.undoAction) {
+        event.preventDefault();
+        undoLastBoxOperation();
+        return;
+      }
       if (event.key === 'a' || event.key === 'A') {
         event.preventDefault();
         moveOption(-1);
@@ -823,7 +841,7 @@
       if (!option || !rect || !labelId) return;
       if (rect.width < 4 || rect.height < 4) return;
       try {
-        await apiFetch('/api/annotations', {
+        const data = await apiFetch('/api/annotations', {
           method: 'POST',
           body: JSON.stringify({
             buc: option.buc,
@@ -835,6 +853,12 @@
             label_id: labelId
           })
         });
+        state.undoAction = {
+          type: 'create',
+          annotationId: data.item.id,
+          buc: option.buc,
+          func: option.func
+        };
         await loadData();
         setStatus('新增标注成功', 'ok');
       } catch (error) {
@@ -865,6 +889,57 @@
       }
     }
 
+    async function undoLastBoxOperation() {
+      const action = state.undoAction;
+      const option = selectedOption();
+      if (!action || state.undoInProgress || !state.editMode || !option) return;
+      if (action.buc !== option.buc || action.func !== option.func) {
+        clearUndoAction();
+        return;
+      }
+
+      state.undoInProgress = true;
+      try {
+        if (action.type === 'create') {
+          await apiFetch(`/api/annotations/${action.annotationId}`, { method: 'DELETE' });
+          await loadData();
+          clearUndoAction();
+          setStatus('已撤回刚才新增的标注框', 'ok');
+          return;
+        }
+
+        if (action.type === 'delete') {
+          const item = action.annotation;
+          const data = await apiFetch('/api/annotations', {
+            method: 'POST',
+            body: JSON.stringify({
+              buc: item.buc,
+              func: item.func,
+              x1: item.x1,
+              y1: item.y1,
+              x2: item.x2,
+              y2: item.y2,
+              label_id: item.label_id,
+              difficult: !!item.difficult,
+              update_reason: item.update_reason,
+              extra_info: item.extra_info
+            })
+          });
+          await loadData();
+          state.selectedId = data.item.id;
+          renderBoxes();
+          renderAnnotationList();
+          clearUndoAction();
+          setStatus('已恢复刚才删除的标注框', 'ok');
+          return;
+        }
+        clearUndoAction();
+      } catch (error) {
+        state.undoInProgress = false;
+        setStatus(`撤回失败：${error.message}`, 'bad');
+      }
+    }
+
     editModeBtn.addEventListener('click', async () => {
       if (!state.editMode) {
         try {
@@ -892,8 +967,16 @@
     deleteAnnotationBtn.addEventListener('click', async () => {
       if (!state.editMode || !state.selectedId) return;
       if (!confirm('确认删除选中的标注？')) return;
+      const deletedAnnotation = selectedAnnotation();
+      if (!deletedAnnotation) return;
       try {
         await apiFetch(`/api/annotations/${state.selectedId}`, { method: 'DELETE' });
+        state.undoAction = {
+          type: 'delete',
+          annotation: { ...deletedAnnotation },
+          buc: deletedAnnotation.buc,
+          func: deletedAnnotation.func
+        };
         state.selectedId = null;
         await loadData();
         setStatus('删除标注成功', 'ok');
