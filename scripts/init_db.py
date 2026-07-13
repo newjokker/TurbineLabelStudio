@@ -18,7 +18,7 @@ from dao import annotation, annotation_lock, buc_dataset, dataset, label, operat
 def main():
     create_all_tables()
     print(f"数据库已初始化: {LOCAL_LABEL_STUDIO_DB}")
-    print(f"每日备份目录: {LABEL_STUDIO_BACKUP_DIR}")
+    print(f"手动备份目录: {LABEL_STUDIO_BACKUP_DIR}")
 
 
 if __name__ == "__main__":

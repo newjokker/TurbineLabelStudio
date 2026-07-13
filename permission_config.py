@@ -18,6 +18,7 @@ PERMISSION_DEFINITIONS = {
     "buc_manage": {"group": "BUC", "name": "管理 BUC", "description": "将 WAV MD5 入库并创建 BUC"},
     "account_view": {"group": "账号", "name": "查看账号", "description": "查看账号、角色、状态和权限"},
     "account_manage": {"group": "账号", "name": "管理账号", "description": "新增、修改、停用账号并配置个人权限"},
+    "backup_manage": {"group": "系统", "name": "管理备份", "description": "主动创建、下载和删除数据库备份"},
 }
 
 PERMISSION_DEPENDENCIES = {

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import datetime
@@ -46,6 +47,9 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+BACKUP_FILENAME_RE = re.compile(
+    r"^label_studio_\d{8}(?:_\d{6}(?:_\d{6})?)?\.db$"
+)
 
 
 def beijing_now():
@@ -81,7 +85,6 @@ def create_all_tables():
     """创建所有已经导入到 Base.metadata 的表。"""
     # drop_incompatible_annotation_table()
     Base.metadata.create_all(engine)
-    backup_database_once_per_day()
 
 
 def drop_incompatible_annotation_table():
@@ -152,18 +155,52 @@ def _backup_sqlite_database(source_path, backup_path):
             os.remove(temp_path)
 
 
-def backup_database_once_per_day(force=False):
-    """每天保留一份 SQLite 一致性快照；force=True 时重建当天备份。"""
-    if not os.path.exists(LOCAL_LABEL_STUDIO_DB):
-        return None
+def _backup_file_info(backup_path):
+    stat = os.stat(backup_path)
+    return {
+        "name": os.path.basename(backup_path),
+        "size_bytes": stat.st_size,
+        "created_time": datetime.fromtimestamp(stat.st_mtime, BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
-    today = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
-    backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, f"label_studio_{today}.db")
-    if os.path.exists(backup_path) and not force:
-        return backup_path
 
-    try:
-        return _backup_sqlite_database(LOCAL_LABEL_STUDIO_DB, backup_path)
-    except (OSError, sqlite3.Error):
-        logging.exception("备份 label_studio 数据库失败 path=%s", backup_path)
+def create_database_backup():
+    """由用户主动创建一个带精确时间的 SQLite 一致性快照。"""
+    if not os.path.isfile(LOCAL_LABEL_STUDIO_DB):
+        raise FileNotFoundError(f"数据库文件不存在: {LOCAL_LABEL_STUDIO_DB}")
+
+    now_text = datetime.now(BEIJING_TZ).strftime("%Y%m%d_%H%M%S_%f")
+    backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, f"label_studio_{now_text}.db")
+    _backup_sqlite_database(LOCAL_LABEL_STUDIO_DB, backup_path)
+    return _backup_file_info(backup_path)
+
+
+def list_database_backups():
+    """列出备份目录中由本项目创建的数据库备份。"""
+    os.makedirs(LABEL_STUDIO_BACKUP_DIR, exist_ok=True)
+    items = []
+    for file_name in os.listdir(LABEL_STUDIO_BACKUP_DIR):
+        if not BACKUP_FILENAME_RE.fullmatch(file_name):
+            continue
+        backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, file_name)
+        if os.path.isfile(backup_path):
+            items.append(_backup_file_info(backup_path))
+    return sorted(items, key=lambda item: (item["created_time"], item["name"]), reverse=True)
+
+
+def get_database_backup_path(file_name):
+    """校验备份文件名并返回已存在的备份路径。"""
+    if not isinstance(file_name, str) or not BACKUP_FILENAME_RE.fullmatch(file_name):
         return None
+    backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, file_name)
+    return backup_path if os.path.isfile(backup_path) else None
+
+
+def delete_database_backup(file_name):
+    """删除指定历史备份，成功返回被删除的备份信息。"""
+    backup_path = get_database_backup_path(file_name)
+    if not backup_path:
+        return None
+    item = _backup_file_info(backup_path)
+    os.remove(backup_path)
+    return item

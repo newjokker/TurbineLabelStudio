@@ -3,6 +3,7 @@
 import os
 import io
 import re
+import sqlite3
 import uuid
 import zipfile
 from datetime import datetime
@@ -20,7 +21,18 @@ from dao import annotation, annotation_lock, buc_dataset, dataset, label, operat
 from dao.annotation import Annotation
 from dao.buc_dataset import BucDataset
 from dao.annotation_lock import AnnotationLock
-from dao.database import Session, beijing_now, create_all_tables, engine, json_text, json_value
+from dao.database import (
+    Session,
+    beijing_now,
+    create_all_tables,
+    create_database_backup,
+    delete_database_backup,
+    engine,
+    get_database_backup_path,
+    json_text,
+    json_value,
+    list_database_backups,
+)
 from dao.dataset import Dataset
 from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
@@ -345,6 +357,11 @@ def annotation_changes_page():
 @app.get("/api_docs.html")
 def api_docs_page():
     return _page("api_docs.html")
+
+
+@app.get("/backups.html")
+def backups_page():
+    return _page("backups.html")
 
 
 @app.post("/api/login")
@@ -1479,6 +1496,84 @@ def delete_dataset(
         _log(session, actor.id, "delete", "dataset", before)
         session.commit()
         return {"ok": True}
+    finally:
+        session.close()
+
+
+@app.get("/api/backups")
+def list_backups(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "backup_manage")
+        items = list_database_backups()
+        return {"items": items, "total_size_bytes": sum(item["size_bytes"] for item in items)}
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="读取备份列表失败") from exc
+    finally:
+        session.close()
+
+
+@app.post("/api/backups")
+def create_backup(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "backup_manage")
+        item = create_database_backup()
+        _log(session, actor.id, "create", "database_backup", item)
+        session.commit()
+        return {"item": item}
+    except (OSError, sqlite3.Error) as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="创建数据库备份失败") from exc
+    finally:
+        session.close()
+
+
+@app.get("/api/backups/{file_name}/download")
+def download_backup(
+    file_name: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "backup_manage")
+        backup_path = get_database_backup_path(file_name)
+        if not backup_path:
+            raise HTTPException(status_code=404, detail="备份文件不存在")
+    finally:
+        session.close()
+    return FileResponse(backup_path, media_type="application/vnd.sqlite3", filename=file_name)
+
+
+@app.delete("/api/backups/{file_name}")
+def delete_backup(
+    file_name: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "backup_manage")
+        item = delete_database_backup(file_name)
+        if not item:
+            raise HTTPException(status_code=404, detail="备份文件不存在")
+        _log(session, actor.id, "delete", "database_backup", item)
+        session.commit()
+        return {"ok": True}
+    except OSError as exc:
+        session.rollback()
+        raise HTTPException(status_code=500, detail="删除数据库备份失败") from exc
     finally:
         session.close()
 

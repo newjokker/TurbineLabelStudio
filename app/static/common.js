@@ -10,7 +10,8 @@ const ROLE_TEXT = {
   buc_view: '查看 BUC',
   buc_manage: '管理 BUC',
   account_view: '查看账号',
-  account_manage: '账号管理'
+  account_manage: '账号管理',
+  backup_manage: '备份管理'
 };
 
 function getUser() {

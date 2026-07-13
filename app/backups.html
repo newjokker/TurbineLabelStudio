@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>数据库备份 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="page-head">
+        <div class="page-title">
+          <strong>数据库备份</strong>
+          <span>只有点击“立即备份”时才会创建数据库快照，启动服务不会自动备份。</span>
+          <p class="muted">每次备份都会包含 SQLite WAL 中已经提交的最新数据，并在保存前执行完整性检查。</p>
+        </div>
+        <button type="button" id="createBtn">立即备份</button>
+      </div>
+      <div class="toolbar">
+        <span class="status" id="status">加载中...</span>
+        <span class="muted" id="summary"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <table>
+        <thead>
+          <tr><th>备份文件</th><th>创建时间</th><th>文件大小</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    renderHeader('backups');
+
+    const createBtn = document.getElementById('createBtn');
+    const status = document.getElementById('status');
+    const summary = document.getElementById('summary');
+    const rows = document.getElementById('rows');
+
+    function formatSize(bytes) {
+      const value = Number(bytes || 0);
+      if (value < 1024) return `${value} B`;
+      if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+      if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+      return `${(value / 1024 ** 3).toFixed(2)} GB`;
+    }
+
+    function renderRows(items) {
+      rows.innerHTML = items.map(item => `
+        <tr>
+          <td><code>${escapeHtml(item.name)}</code></td>
+          <td>${escapeHtml(item.created_time)}</td>
+          <td><span class="metric-chip">${escapeHtml(formatSize(item.size_bytes))}</span></td>
+          <td>
+            <div class="row-actions">
+              <button class="secondary" type="button" data-download="${escapeHtml(item.name)}">下载</button>
+              <button class="danger" type="button" data-delete="${escapeHtml(item.name)}">删除</button>
+            </div>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" class="empty-table">暂无数据库备份</td></tr>';
+    }
+
+    async function loadBackups() {
+      const data = await apiFetch('/api/backups');
+      const items = data.items || [];
+      renderRows(items);
+      summary.textContent = `共 ${items.length} 份，合计 ${formatSize(data.total_size_bytes)}`;
+      status.className = 'status ok';
+      status.textContent = '备份列表已更新';
+    }
+
+    createBtn.addEventListener('click', async () => {
+      createBtn.disabled = true;
+      status.className = 'status';
+      status.textContent = '正在创建并校验备份...';
+      try {
+        await apiFetch('/api/backups', { method: 'POST' });
+        await loadBackups();
+        status.textContent = '数据库备份创建成功';
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      } finally {
+        createBtn.disabled = false;
+      }
+    });
+
+    async function downloadBackup(fileName) {
+      const user = getUser();
+      const sessionId = localStorage.getItem('tls_session_id');
+      const response = await fetch(`/api/backups/${encodeURIComponent(fileName)}/download`, {
+        headers: {
+          'X-User-Id': user?.id || '',
+          'X-Session-Id': sessionId || ''
+        }
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || '下载备份失败');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    rows.addEventListener('click', async event => {
+      const downloadName = event.target.dataset.download;
+      const deleteName = event.target.dataset.delete;
+      try {
+        if (downloadName) {
+          status.className = 'status';
+          status.textContent = '正在下载备份...';
+          await downloadBackup(downloadName);
+          status.className = 'status ok';
+          status.textContent = '备份下载已开始';
+        }
+        if (deleteName && confirm(`确认删除备份 ${deleteName}？删除后无法恢复。`)) {
+          await apiFetch(`/api/backups/${encodeURIComponent(deleteName)}`, { method: 'DELETE' });
+          await loadBackups();
+          status.textContent = '历史备份已删除';
+        }
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+      }
+    });
+
+    refreshPermissions()
+      .then(permissions => {
+        if (!permissions.backup_manage) throw new Error('当前账号没有备份管理权限');
+        return loadBackups();
+      })
+      .catch(error => {
+        createBtn.disabled = true;
+        status.className = 'status bad';
+        status.textContent = error.message;
+      });
+  </script>
+</body>
+</html>
