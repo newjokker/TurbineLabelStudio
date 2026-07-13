@@ -128,6 +128,18 @@ def test_annotation_view(headers):
     test("  + buc 匹配", data.get("buc") == DEFAULT_BUC)
     test("  + annotations 为 list", isinstance(data.get("annotations"), list))
     test("  + channels 为 list", isinstance(data.get("channels"), list))
+    annotations = data.get("annotations", [])
+    if annotations:
+        label_id = annotations[0].get("label_id")
+        status, filtered = request_json(
+            "GET", "/api/annotation-view/data",
+            headers=headers,
+            query={"buc": DEFAULT_BUC, "func": DEFAULT_FUNC, "label_id": label_id},
+        )
+        filtered_annotations = filtered.get("annotations", [])
+        test("  + 标签查看模式接口只返回指定标签", status == 200 and bool(filtered_annotations) and all(
+            item.get("label_id") == label_id for item in filtered_annotations
+        ))
 
 
 def test_annotation_changes(headers):

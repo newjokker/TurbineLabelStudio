@@ -66,6 +66,12 @@
 
       <aside class="viewer-side">
         <section class="panel load-panel">
+          <label>查看模式
+            <select id="viewMode">
+              <option value="all">普通查看模式</option>
+              <option value="label">标签查看模式</option>
+            </select>
+          </label>
           <label>数据集
             <select id="datasetFilter"></select>
           </label>
@@ -138,6 +144,7 @@
     };
 
     const statusEl = document.getElementById('status');
+    const viewMode = document.getElementById('viewMode');
     const datasetFilter = document.getElementById('datasetFilter');
     const labelFilter = document.getElementById('labelFilter');
     const bucInput = document.getElementById('bucInput');
@@ -196,6 +203,14 @@
       return (item.datasets || []).some(dataset => String(dataset.id) === String(datasetId));
     }
 
+    function isLabelViewMode() {
+      return viewMode.value === 'label';
+    }
+
+    function activeOptionLabelId() {
+      return isLabelViewMode() ? labelFilter.value : '';
+    }
+
     function filteredOptions() {
       return state.options.filter(item => (
         optionHasDataset(item, datasetFilter.value) && optionHasLabel(item, labelFilter.value)
@@ -217,6 +232,7 @@
     }
 
     function renderLabelFilter() {
+      const previousValue = labelFilter.value;
       const labels = [];
       const seen = new Set();
       for (const item of state.options) {
@@ -230,6 +246,19 @@
       labelFilter.innerHTML = '<option value="">全部标签</option>' + labels
         .map(label => `<option value="${label.id}">${escapeHtml(label.label)}</option>`)
         .join('');
+      if (labels.some(label => String(label.id) === previousValue)) {
+        labelFilter.value = previousValue;
+      }
+      syncViewModeControls();
+    }
+
+    function syncViewModeControls() {
+      const allOption = labelFilter.querySelector('option[value=""]');
+      if (allOption) allOption.disabled = isLabelViewMode();
+      if (isLabelViewMode() && !labelFilter.value) {
+        const firstLabel = [...labelFilter.options].find(option => option.value);
+        labelFilter.value = firstLabel?.value || '';
+      }
     }
 
     function renderDatasetFilter() {
@@ -603,7 +632,14 @@
       }
       clearStatus();
       try {
-        const data = await apiFetch(`/api/annotation-view/data?buc=${encodeURIComponent(buc)}&func=${encodeURIComponent(funcName)}`);
+        const labelId = activeOptionLabelId();
+        const labelQuery = labelId ? `&label_id=${encodeURIComponent(labelId)}` : '';
+        const data = await apiFetch(`/api/annotation-view/data?buc=${encodeURIComponent(buc)}&func=${encodeURIComponent(funcName)}${labelQuery}`);
+        if (labelId && !data.annotations.length) {
+          clearViewerData('没有包含该标签的图片');
+          setStatus('当前图片不包含指定标签', 'bad');
+          return false;
+        }
         state.data = data;
         state.selectedId = data.annotations[0]?.id || null;
         state.selectedChannel = data.channels.find(item => item.audio_url)?.position_id || null;
@@ -619,6 +655,21 @@
         setStatus(error.message, 'bad');
         return false;
       }
+    }
+
+    function clearViewerData(message = '暂无图片') {
+      state.data = null;
+      state.selectedId = null;
+      state.selectedChannel = null;
+      targetImage.removeAttribute('src');
+      targetImage.alt = '';
+      boxLayer.innerHTML = '';
+      emptyImage.textContent = message;
+      emptyImage.classList.remove('hidden');
+      resetAudio();
+      renderAnnotationList();
+      renderChannels();
+      renderEditControls();
     }
 
     async function switchImageSelection(updateSelection) {
@@ -759,11 +810,16 @@
         bucInput.innerHTML = '';
         funcInput.innerHTML = '';
         renderBucList();
+        clearViewerData(isLabelViewMode() ? '没有包含该标签的图片' : '暂无图片');
       }
     }
 
     datasetFilter.addEventListener('change', handleOptionFilterChange);
     labelFilter.addEventListener('change', handleOptionFilterChange);
+    viewMode.addEventListener('change', async () => {
+      syncViewModeControls();
+      await handleOptionFilterChange();
+    });
     editLabelMenu.addEventListener('click', event => {
       const option = event.target.closest('.label-dropdown-option');
       if (!option) return;

@@ -715,6 +715,7 @@ def annotation_changes(
 def annotation_view_data(
     buc: str,
     func_name: str = Query(..., alias="func"),
+    label_id: Optional[int] = None,
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
 ):
@@ -722,14 +723,15 @@ def annotation_view_data(
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
         _require(session, actor, "annotation_view")
-        rows = (
+        query = (
             session.query(Annotation, Label, UserAccount)
             .outerjoin(Label, Label.id == Annotation.label_id)
             .outerjoin(UserAccount, UserAccount.id == Annotation.update_id)
             .filter(Annotation.buc == buc, Annotation.func == func_name)
-            .order_by(Annotation.id)
-            .all()
         )
+        if label_id is not None:
+            query = query.filter(Annotation.label_id == label_id)
+        rows = query.order_by(Annotation.id).all()
         annotations = []
         for record, label_record, user_record in rows:
             label_extra = json_value(label_record.extra_info) if label_record else {}
@@ -762,6 +764,7 @@ def annotation_view_data(
         return {
             "buc": buc,
             "func": func_name,
+            "label_id": label_id,
             "image_url": f"/api/annotation-view/image?buc={buc}&func={func_name}&{resource_auth}",
             "annotations": annotations,
             "channels": channels,
