@@ -204,6 +204,43 @@ header {
 .form-grid .wide { grid-column: span 2; }
 .form-grid .full { grid-column: 1 / -1; }
 .annotation-change-filters { grid-template-columns: repeat(6, minmax(130px, 1fr)); }
+.permission-editor {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+.permission-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.permission-editor-head > div { display: grid; gap: 4px; }
+.permission-editor-head span { color: var(--muted); font-size: 12px; }
+.permission-editor-head button { min-height: 32px; padding: 0 10px; font-size: 12px; }
+.permission-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.permission-option {
+  min-width: 0;
+  display: flex;
+  grid-template-columns: none;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+  color: var(--text);
+}
+.permission-option input { width: auto; min-height: 0; margin: 3px 0 0; }
+.permission-option span { min-width: 0; display: grid; gap: 3px; }
+.permission-option strong { font-size: 13px; }
+.permission-option small { color: var(--muted); line-height: 1.4; }
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -1033,6 +1070,7 @@ td code {
   .page { padding: 16px; }
   .viewer-page { padding: 0; }
   .grid-links, .form-grid { grid-template-columns: 1fr; }
+  .permission-grid { grid-template-columns: 1fr; }
   .grid-links .card:nth-child(n) { grid-column: auto; }
   .form-grid .wide, .form-grid .full { grid-column: auto; }
   .panel { overflow-x: auto; }

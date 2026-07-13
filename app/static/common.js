@@ -1,6 +1,15 @@
 const ROLE_TEXT = {
-  label_write: '标签编辑',
-  label_export: '标签导出',
+  annotation_view: '查看标注',
+  annotation_edit: '编辑标注',
+  annotation_export: '导出标注',
+  audit_view: '查看审计',
+  label_view: '查看标签',
+  label_manage: '管理标签',
+  dataset_view: '查看数据集',
+  dataset_manage: '管理数据集',
+  buc_view: '查看 BUC',
+  buc_manage: '管理 BUC',
+  account_view: '查看账号',
   account_manage: '账号管理'
 };
 
@@ -18,6 +27,16 @@ function setUser(user, permissions, sessionId) {
 function getPermissions() {
   const text = localStorage.getItem('tls_permissions');
   return text ? JSON.parse(text) : {};
+}
+
+function hasPermission(permission) {
+  return !!getPermissions()[permission];
+}
+
+async function refreshPermissions() {
+  const data = await apiFetch('/api/permissions');
+  setUser(data.user, data.permissions);
+  return data.permissions;
 }
 
 function logout() {

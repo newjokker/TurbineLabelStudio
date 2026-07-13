@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>账号管理 - TurbineLabelStudio</title>
+  <title>权限管理 - TurbineLabelStudio</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -12,8 +12,8 @@
     <section class="panel">
       <div class="page-head">
         <div class="page-title">
-          <strong>账号管理</strong>
-          <span>查看账号角色和启用状态；管理员可以新增、编辑或停用账号。</span>
+          <strong>权限管理</strong>
+          <span>查看账号角色、个人权限和启用状态；拥有账号管理权限的人可以实时配置。</span>
           <p class="muted" id="permissionText"></p>
         </div>
       </div>
@@ -30,15 +30,25 @@
           </select>
         </label>
         <label class="wide">停用时间 <input id="endTime" placeholder="YYYY-MM-DD HH:MM:SS"></label>
-        <button type="submit">保存账号</button>
+        <button type="submit">保存账号及权限</button>
         <button class="secondary" type="button" id="resetBtn">清空</button>
+        <div class="permission-editor full">
+          <div class="permission-editor-head">
+            <div>
+              <strong>个人权限</strong>
+              <span>选择角色会载入默认模板，下面的权限可以继续单独调整。</span>
+            </div>
+            <button class="secondary" id="applyRolePresetBtn" type="button">恢复角色默认权限</button>
+          </div>
+          <div class="permission-grid" id="permissionOptions"></div>
+        </div>
       </form>
       <div class="toolbar"><span class="status" id="status">加载中...</span></div>
     </section>
     <section class="panel">
       <table>
         <thead>
-          <tr><th>账号</th><th>角色</th><th>状态</th><th>操作</th></tr>
+          <tr><th>账号</th><th>角色</th><th>已启用权限</th><th>状态</th><th>操作</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
@@ -48,15 +58,57 @@
   <script>
     requireLogin();
     let accounts = [];
+    let permissionCatalog = { items: [], role_presets: {}, dependencies: {} };
     renderHeader('accounts');
     renderPermissionText(document.getElementById('permissionText'));
 
-    function canManage() { return !!getPermissions().account_manage; }
+    function canManage() { return hasPermission('account_manage'); }
 
     function roleClass(role) {
       if (role === '管理员') return 'admin';
       if (role === '编辑者') return 'editor';
       return '';
+    }
+
+    function renderPermissionOptions(permissions = {}) {
+      const container = document.getElementById('permissionOptions');
+      container.innerHTML = permissionCatalog.items.map(item => `
+        <label class="permission-option">
+          <input type="checkbox" data-permission="${escapeHtml(item.key)}" ${permissions[item.key] ? 'checked' : ''}>
+          <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.group)} · ${escapeHtml(item.description)}</small></span>
+        </label>
+      `).join('');
+    }
+
+    function applyRolePreset() {
+      const role = document.getElementById('role').value;
+      renderPermissionOptions(permissionCatalog.role_presets[role] || {});
+    }
+
+    function collectPermissions() {
+      return Object.fromEntries(permissionCatalog.items.map(item => [
+        item.key,
+        !!document.querySelector(`[data-permission="${item.key}"]`)?.checked
+      ]));
+    }
+
+    function handlePermissionDependency(event) {
+      const input = event.target.closest('[data-permission]');
+      if (!input) return;
+      const key = input.dataset.permission;
+      if (input.checked) {
+        (permissionCatalog.dependencies[key] || []).forEach(dependency => {
+          const target = document.querySelector(`[data-permission="${dependency}"]`);
+          if (target) target.checked = true;
+        });
+      } else {
+        Object.entries(permissionCatalog.dependencies).forEach(([permission, dependencies]) => {
+          if (dependencies.includes(key)) {
+            const target = document.querySelector(`[data-permission="${permission}"]`);
+            if (target) target.checked = false;
+          }
+        });
+      }
     }
 
     function resetForm() {
@@ -66,11 +118,16 @@
       document.getElementById('alias').value = '';
       document.getElementById('role').value = '观察者';
       document.getElementById('endTime').value = '';
+      applyRolePreset();
     }
 
     function renderRows() {
       document.getElementById('accountForm').classList.toggle('hidden', !canManage());
-      document.getElementById('rows').innerHTML = accounts.map(item => `
+      document.getElementById('rows').innerHTML = accounts.map(item => {
+        const permissionNames = permissionCatalog.items
+          .filter(permission => item.permissions?.[permission.key])
+          .map(permission => permission.name);
+        return `
         <tr>
           <td>
             <div class="identity-cell">
@@ -79,17 +136,19 @@
             </div>
           </td>
           <td><span class="role-chip ${roleClass(item.role)}">${escapeHtml(item.role)}</span></td>
+          <td><div class="chip-list">${permissionNames.map(name => `<span class="tag-chip">${escapeHtml(name)}</span>`).join('') || '<span class="muted">无</span>'}</div></td>
           <td>
             ${item.end_time
               ? `<span class="metric-chip warn">已停用 ${escapeHtml(item.end_time)}</span>`
               : '<span class="metric-chip good">启用中</span>'}
           </td>
           <td><div class="row-actions">
-            <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>编辑</button>
+            <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>配置权限</button>
             <button class="danger" data-disable="${item.id}" ${canManage() ? '' : 'disabled'}>停用</button>
           </div></td>
         </tr>
-      `).join('') || '<tr><td colspan="4" class="empty-table">暂无账号</td></tr>';
+      `;
+      }).join('') || '<tr><td colspan="5" class="empty-table">暂无账号</td></tr>';
     }
 
     async function loadAccounts() {
@@ -97,6 +156,8 @@
       try {
         const data = await apiFetch('/api/accounts');
         accounts = data.items;
+        permissionCatalog = data.permission_catalog || permissionCatalog;
+        if (!document.getElementById('accountId').value) applyRolePreset();
         status.className = 'status ok';
         status.textContent = `已加载 ${accounts.length} 个账号`;
         renderRows();
@@ -114,15 +175,18 @@
         password: document.getElementById('password').value,
         alias: document.getElementById('alias').value.trim(),
         role: document.getElementById('role').value,
-        end_time: document.getElementById('endTime').value.trim()
+        end_time: document.getElementById('endTime').value.trim(),
+        permissions: collectPermissions()
       };
       try {
         await apiFetch(id ? `/api/accounts/${id}` : '/api/accounts', {
           method: id ? 'PUT' : 'POST',
           body: JSON.stringify(payload)
         });
+        const editingSelf = Number(id) === Number(getUser()?.id);
         resetForm();
         await loadAccounts();
+        if (editingSelf) await refreshPermissions();
       } catch (error) {
         document.getElementById('status').className = 'status bad';
         document.getElementById('status').textContent = error.message;
@@ -130,6 +194,9 @@
     });
 
     document.getElementById('resetBtn').addEventListener('click', resetForm);
+    document.getElementById('role').addEventListener('change', applyRolePreset);
+    document.getElementById('applyRolePresetBtn').addEventListener('click', applyRolePreset);
+    document.getElementById('permissionOptions').addEventListener('change', handlePermissionDependency);
 
     document.getElementById('rows').addEventListener('click', async event => {
       const editId = Number(event.target.dataset.edit);
@@ -142,6 +209,10 @@
         document.getElementById('alias').value = item.alias || '';
         document.getElementById('role').value = item.role;
         document.getElementById('endTime').value = item.end_time || '';
+        renderPermissionOptions(item.permissions || {});
+        document.getElementById('status').className = 'status ok';
+        document.getElementById('status').textContent = `正在配置 ${item.alias || item.name} 的个人权限`;
+        document.getElementById('accountForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       if (disableId && confirm('确认停用这个账号？')) {
         try {
@@ -154,8 +225,16 @@
       }
     });
 
-    resetForm();
-    loadAccounts();
+    refreshPermissions()
+      .then(() => {
+        renderPermissionText(document.getElementById('permissionText'));
+        resetForm();
+        return loadAccounts();
+      })
+      .catch(error => {
+        document.getElementById('status').className = 'status bad';
+        document.getElementById('status').textContent = error.message;
+      });
   </script>
 </body>
 </html>

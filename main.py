@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func as sql_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from dao import annotation, annotation_lock, buc_dataset, dataset, label, operation_log, user_account, wav_buc  # noqa: F401
+from dao import annotation, annotation_lock, buc_dataset, dataset, label, operation_log, user_account, user_permission, wav_buc  # noqa: F401
 from dao.annotation import Annotation
 from dao.buc_dataset import BucDataset
 from dao.annotation_lock import AnnotationLock
@@ -25,7 +25,9 @@ from dao.dataset import Dataset
 from dao.label import Label, ensure_label_color
 from dao.operation_log import OperationLog
 from dao.user_account import UserAccount
+from dao.user_permission import UserPermission
 from dao.wav_buc import WAV_POSITION_ORDER, WavBuc, generate_next_buc
+from permission_config import PERMISSION_DEFINITIONS, PERMISSION_DEPENDENCIES, ROLE_PERMISSION_PRESETS
 from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
 from scripts.format_transform import build_annotation_xml
 
@@ -96,25 +98,10 @@ class AccountPayload(BaseModel):
     alias: Optional[str] = None
     end_time: Optional[str] = None
     role: str
+    permissions: Optional[Dict[str, bool]] = None
 
 
-ROLE_PERMISSIONS = {
-    "观察者": {
-        "label_write": False,
-        "label_export": False,
-        "account_manage": False,
-    },
-    "编辑者": {
-        "label_write": True,
-        "label_export": True,
-        "account_manage": False,
-    },
-    "管理员": {
-        "label_write": True,
-        "label_export": True,
-        "account_manage": True,
-    },
-}
+ROLE_PERMISSIONS = ROLE_PERMISSION_PRESETS
 
 
 def _page(name):
@@ -178,10 +165,59 @@ def _get_actor(session, x_user_id, x_session_id):
     return actor
 
 
-def _require(actor, permission):
-    rules = ROLE_PERMISSIONS.get(actor.role, ROLE_PERMISSIONS["观察者"])
-    if not rules.get(permission):
-        raise HTTPException(status_code=403, detail="当前角色没有权限")
+def _effective_permissions(session, actor):
+    permissions = dict(ROLE_PERMISSION_PRESETS.get(actor.role, ROLE_PERMISSION_PRESETS["观察者"]))
+    rows = session.query(UserPermission).filter_by(user_id=actor.id).all()
+    for row in rows:
+        if row.permission in PERMISSION_DEFINITIONS:
+            permissions[row.permission] = bool(row.enabled)
+    for permission, dependencies in PERMISSION_DEPENDENCIES.items():
+        if permissions[permission]:
+            for dependency in dependencies:
+                permissions[dependency] = True
+    return permissions
+
+
+def _validate_permissions(permissions):
+    if permissions is None:
+        return None
+    unknown = sorted(set(permissions) - set(PERMISSION_DEFINITIONS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"未知权限: {', '.join(unknown)}")
+    normalized = {key: bool(permissions.get(key, False)) for key in PERMISSION_DEFINITIONS}
+    for permission, dependencies in PERMISSION_DEPENDENCIES.items():
+        if normalized[permission]:
+            for dependency in dependencies:
+                normalized[dependency] = True
+    return normalized
+
+
+def _replace_user_permissions(session, user_id, permissions):
+    normalized = _validate_permissions(permissions)
+    if normalized is None:
+        return
+    session.query(UserPermission).filter_by(user_id=user_id).delete(synchronize_session=False)
+    session.add_all([
+        UserPermission(user_id=user_id, permission=key, enabled=enabled)
+        for key, enabled in normalized.items()
+    ])
+
+
+def _account_dict(session, record):
+    return {**_safe_user(record), "permissions": _effective_permissions(session, record)}
+
+
+def _permission_catalog():
+    return {
+        "items": [{"key": key, **definition} for key, definition in PERMISSION_DEFINITIONS.items()],
+        "role_presets": ROLE_PERMISSION_PRESETS,
+        "dependencies": PERMISSION_DEPENDENCIES,
+    }
+
+
+def _require(session, actor, permission):
+    if not _effective_permissions(session, actor).get(permission):
+        raise HTTPException(status_code=403, detail="当前账号没有此功能权限")
 
 
 def _lock_expired(lock):
@@ -329,7 +365,7 @@ def login(payload: LoginPayload):
         return {
             "user": _safe_user(record),
             "session_id": session_id,
-            "permissions": ROLE_PERMISSIONS.get(record.role, ROLE_PERMISSIONS["观察者"]),
+            "permissions": _effective_permissions(session, record),
             "server_time": _format_dt(beijing_now()),
         }
     finally:
@@ -346,7 +382,7 @@ def permissions(
         actor = _get_actor(session, x_user_id, x_session_id)
         return {
             "user": _safe_user(actor),
-            "permissions": ROLE_PERMISSIONS.get(actor.role, ROLE_PERMISSIONS["观察者"]),
+            "permissions": _effective_permissions(session, actor),
             "server_time": _format_dt(beijing_now()),
         }
     finally:
@@ -360,7 +396,8 @@ def list_labels(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "label_view")
         rows = session.query(Label).order_by(Label.id).all()
         return {"items": [_label_dict(row) for row in rows]}
     finally:
@@ -376,7 +413,7 @@ def create_label(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "label_manage")
         record = Label(
             label=payload.label,
             des=payload.des,
@@ -409,7 +446,7 @@ def update_label(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "label_manage")
         record = session.query(Label).filter_by(id=label_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="标签不存在")
@@ -443,7 +480,7 @@ def delete_label(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "label_manage")
         record = session.query(Label).filter_by(id=label_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="标签不存在")
@@ -466,7 +503,8 @@ def annotation_view_options(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_view")
         rows = (
             session.query(Annotation.buc, Annotation.func, sql_func.count(Annotation.id).label("count"))
             .group_by(Annotation.buc, Annotation.func)
@@ -565,7 +603,8 @@ def annotation_changes(
     """查询标注框审计日志，并按操作人员、标签、BUC 和时间范围筛选。"""
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "audit_view")
         start_at = _parse_annotation_change_time(start_time, "开始时间")
         end_at = _parse_annotation_change_time(end_time, "结束时间")
         if end_at and end_time and len(end_time.strip().replace("T", " ")) == 16:
@@ -660,7 +699,8 @@ def annotation_view_data(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_view")
         rows = (
             session.query(Annotation, Label, UserAccount)
             .outerjoin(Label, Label.id == Annotation.label_id)
@@ -688,11 +728,12 @@ def annotation_view_data(
 
         wav_rows = session.query(WavBuc.wave_md5, WavBuc.position_id).filter_by(buc=buc).all()
         position_md5 = {row.position_id: row.wave_md5 for row in wav_rows}
+        resource_auth = f"user_id={x_user_id}&session_id={x_session_id}"
         channels = [
             {
                 "position_id": position_id,
                 "md5": position_md5.get(position_id),
-                "audio_url": f"/api/annotation-view/wav/{position_md5[position_id]}" if position_id in position_md5 else None,
+                "audio_url": f"/api/annotation-view/wav/{position_md5[position_id]}?{resource_auth}" if position_id in position_md5 else None,
             }
             for position_id in WAV_POSITION_ORDER
         ]
@@ -700,7 +741,7 @@ def annotation_view_data(
         return {
             "buc": buc,
             "func": func_name,
-            "image_url": f"/api/annotation-view/image?buc={buc}&func={func_name}",
+            "image_url": f"/api/annotation-view/image?buc={buc}&func={func_name}&{resource_auth}",
             "annotations": annotations,
             "channels": channels,
         }
@@ -709,7 +750,18 @@ def annotation_view_data(
 
 
 @app.get("/api/annotation-view/image")
-def annotation_view_image(buc: str, func_name: str = Query(..., alias="func")):
+def annotation_view_image(
+    buc: str,
+    func_name: str = Query(..., alias="func"),
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, user_id, session_id)
+        _require(session, actor, "annotation_view")
+    finally:
+        session.close()
     image_path = get_img_path_by_buc_func(buc, func_name)
     if not image_path or not os.path.isfile(image_path):
         raise HTTPException(status_code=404, detail="图片缓存生成失败")
@@ -717,7 +769,13 @@ def annotation_view_image(buc: str, func_name: str = Query(..., alias="func")):
 
 
 @app.get("/api/annotation-view/wav/{md5}")
-def annotation_view_wav(md5: str):
+def annotation_view_wav(md5: str, user_id: Optional[str] = None, session_id: Optional[str] = None):
+    session = Session()
+    try:
+        actor = _get_actor(session, user_id, session_id)
+        _require(session, actor, "annotation_view")
+    finally:
+        session.close()
     wav_path = get_wav_path_by_md5(md5)
     if not wav_path or not os.path.isfile(wav_path):
         raise HTTPException(status_code=404, detail="WAV 缓存获取失败")
@@ -733,7 +791,7 @@ def lock_annotation_image(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "annotation_edit")
         lock = _acquire_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
         _log(session, actor.id, "update", "annotation_lock", lock.to_dict())
         session.commit()
@@ -758,7 +816,7 @@ def heartbeat_annotation_lock(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "annotation_edit")
         lock = _require_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
         session.commit()
         session.refresh(lock)
@@ -776,6 +834,7 @@ def unlock_annotation_image(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_edit")
         lock = session.query(AnnotationLock).filter_by(buc=payload.buc, func=payload.func).first()
         if lock and lock.locked_by == actor.id and lock.locked_session_id == x_session_id:
             before = lock.to_dict()
@@ -796,7 +855,7 @@ def create_annotation(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "annotation_edit")
         _require_annotation_lock(session, actor, x_session_id, payload.buc, payload.func)
         if not session.query(WavBuc.buc).filter_by(buc=payload.buc).first():
             raise HTTPException(status_code=400, detail="BUC 不存在")
@@ -837,7 +896,7 @@ def delete_annotation(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "annotation_edit")
         record = session.query(Annotation).filter_by(id=annotation_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="标注不存在")
@@ -864,7 +923,7 @@ def update_annotation_comment(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "label_write")
+        _require(session, actor, "annotation_edit")
         record = session.query(Annotation).filter_by(id=annotation_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="标注不存在")
@@ -1042,7 +1101,7 @@ def public_create_dataset(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "dataset_manage")
         name = payload.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="数据集名称不能为空")
@@ -1071,7 +1130,7 @@ def public_replace_dataset_bucs(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "dataset_manage")
         record = session.query(Dataset).filter_by(id=dataset_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="数据集不存在")
@@ -1097,7 +1156,7 @@ def public_create_buc(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "buc_manage")
         existing = (
             session.query(WavBuc)
             .filter(WavBuc.wave_md5.in_(list(wave_position_id.keys())))
@@ -1139,7 +1198,8 @@ def public_get_buc_by_md5(
     md5 = _normalize_md5_or_400(md5)
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "buc_view")
         record = session.query(WavBuc).filter_by(wave_md5=md5).first()
         return {
             "wave_md5": md5,
@@ -1159,7 +1219,8 @@ def public_get_buc_wav_md5s(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "buc_view")
         rows = _get_buc_wav_rows(session, buc)
         position_order = {position_id: idx for idx, position_id in enumerate(WAV_POSITION_ORDER)}
         items = sorted(rows, key=lambda row: position_order.get(row.position_id, len(WAV_POSITION_ORDER)))
@@ -1181,7 +1242,8 @@ def public_download_buc_image(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         _get_buc_wav_rows(session, buc)
     finally:
         session.close()
@@ -1198,7 +1260,8 @@ def public_download_buc_mel(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         _get_buc_wav_rows(session, buc)
     finally:
         session.close()
@@ -1215,7 +1278,8 @@ def public_download_buc_audio(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         row = session.query(WavBuc).filter_by(buc=buc, position_id=position_id).first()
         if not row:
             raise HTTPException(status_code=404, detail="BUC 对应通道音频不存在")
@@ -1234,7 +1298,8 @@ def public_download_buc_audio_zip(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         rows = _get_buc_wav_rows(session, buc)
         wav_items = [(row.position_id, row.wave_md5) for row in rows]
     finally:
@@ -1261,7 +1326,8 @@ def public_get_buc_annotations(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         wav_rows = _get_buc_wav_rows(session, buc)
         annotations = _get_public_annotation_items(session, buc, func_name)
         return {
@@ -1284,7 +1350,8 @@ def public_download_buc_annotations_xml(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
         _get_buc_wav_rows(session, buc)
         annotations = _get_public_annotation_items(session, buc, func_name)
     finally:
@@ -1310,7 +1377,8 @@ def list_datasets(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "dataset_view")
         rows = session.query(Dataset).order_by(Dataset.id).all()
         buc_rows = session.query(WavBuc.buc).distinct().order_by(WavBuc.buc).all()
         return {
@@ -1330,7 +1398,7 @@ def create_dataset(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "dataset_manage")
         name = payload.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="数据集名称不能为空")
@@ -1362,7 +1430,7 @@ def update_dataset(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "dataset_manage")
         record = session.query(Dataset).filter_by(id=dataset_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="数据集不存在")
@@ -1397,7 +1465,7 @@ def delete_dataset(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "dataset_manage")
         record = session.query(Dataset).filter_by(id=dataset_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="数据集不存在")
@@ -1418,9 +1486,10 @@ def list_accounts(
 ):
     session = Session()
     try:
-        _get_actor(session, x_user_id, x_session_id)
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "account_view")
         rows = session.query(UserAccount).order_by(UserAccount.id).all()
-        return {"items": [_safe_user(row) for row in rows]}
+        return {"items": [_account_dict(session, row) for row in rows], "permission_catalog": _permission_catalog()}
     finally:
         session.close()
 
@@ -1434,7 +1503,7 @@ def create_account(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "account_manage")
         if payload.role not in ROLE_PERMISSIONS:
             raise HTTPException(status_code=400, detail="角色不合法")
         if not payload.password:
@@ -1448,10 +1517,13 @@ def create_account(
         )
         session.add(record)
         session.flush()
-        _log(session, actor.id, "create", "user_account", _safe_user(record))
+        permissions = payload.permissions if payload.permissions is not None else ROLE_PERMISSION_PRESETS[payload.role]
+        _replace_user_permissions(session, record.id, permissions)
+        item = _account_dict(session, record)
+        _log(session, actor.id, "create", "user_account", item)
         session.commit()
         session.refresh(record)
-        return {"item": _safe_user(record)}
+        return {"item": _account_dict(session, record)}
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail="账号已存在") from exc
@@ -1469,24 +1541,30 @@ def update_account(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "account_manage")
         if payload.role not in ROLE_PERMISSIONS:
             raise HTTPException(status_code=400, detail="角色不合法")
         record = session.query(UserAccount).filter_by(id=account_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="账号不存在")
-        before = _safe_user(record)
+        permissions = payload.permissions if payload.permissions is not None else ROLE_PERMISSION_PRESETS[payload.role]
+        normalized_permissions = _validate_permissions(permissions)
+        if record.id == actor.id and not normalized_permissions.get("account_manage"):
+            raise HTTPException(status_code=400, detail="不能取消自己当前的账号管理权限")
+        before = _account_dict(session, record)
         record.name = payload.name
         if payload.password:
             record.password = payload.password
         record.alias = payload.alias
         record.end_time = _parse_dt(payload.end_time)
         record.role = payload.role
+        _replace_user_permissions(session, record.id, normalized_permissions)
         session.flush()
-        _log(session, actor.id, "update", "user_account", {"before": before, "after": _safe_user(record)})
+        after = _account_dict(session, record)
+        _log(session, actor.id, "update", "user_account", {"before": before, "after": after})
         session.commit()
         session.refresh(record)
-        return {"item": _safe_user(record)}
+        return {"item": _account_dict(session, record)}
     except IntegrityError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail="账号已存在") from exc
@@ -1503,10 +1581,12 @@ def disable_account(
     session = Session()
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
-        _require(actor, "account_manage")
+        _require(session, actor, "account_manage")
         record = session.query(UserAccount).filter_by(id=account_id).first()
         if not record:
             raise HTTPException(status_code=404, detail="账号不存在")
+        if record.id == actor.id:
+            raise HTTPException(status_code=400, detail="不能停用当前登录账号")
         before = _safe_user(record)
         record.end_time = beijing_now()
         session.flush()

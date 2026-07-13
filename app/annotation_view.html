@@ -502,7 +502,7 @@
     async function loadPermissions() {
       const data = await apiFetch('/api/permissions');
       setUser(data.user, data.permissions);
-      state.canEdit = !!data.permissions?.label_write;
+      state.canEdit = !!data.permissions?.annotation_edit;
       renderEditControls();
     }
 

@@ -44,7 +44,7 @@
     renderHeader('labels');
     renderPermissionText(document.getElementById('permissionText'));
 
-    function canWrite() { return !!getPermissions().label_write; }
+    function canWrite() { return hasPermission('label_manage'); }
 
     function labelPurpose(item) {
       return item.des?.trim() || '暂无用途说明';
@@ -202,8 +202,16 @@
 
     document.getElementById('color').addEventListener('input', syncColorToExtraInfo);
 
-    resetForm();
-    loadLabels();
+    refreshPermissions()
+      .then(() => {
+        renderPermissionText(document.getElementById('permissionText'));
+        resetForm();
+        return loadLabels();
+      })
+      .catch(error => {
+        document.getElementById('status').className = 'status bad';
+        document.getElementById('status').textContent = error.message;
+      });
   </script>
 </body>
 </html>

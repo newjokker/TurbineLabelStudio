@@ -12,7 +12,7 @@ from config import LABEL_STUDIO_BACKUP_DIR, LOCAL_LABEL_STUDIO_DB
 from dao.database import create_all_tables
 
 # 导入所有表模型，确保 Base.metadata 包含完整表结构和外键关系。
-from dao import annotation, annotation_lock, buc_dataset, dataset, label, operation_log, user_account, wav_buc  # noqa: F401
+from dao import annotation, annotation_lock, buc_dataset, dataset, label, operation_log, user_account, user_permission, wav_buc  # noqa: F401
 
 
 def main():

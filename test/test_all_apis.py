@@ -345,6 +345,8 @@ def test_accounts(headers):
     status, data = request_json("GET", "/api/accounts", headers=headers)
     test("GET /api/accounts → 200", status == 200)
     test("  + items 为 list", isinstance(data.get("items"), list))
+    test("  + 返回个人权限", all(isinstance(item.get("permissions"), dict) for item in data.get("items", [])))
+    test("  + 返回权限配置目录", isinstance(data.get("permission_catalog", {}).get("items"), list))
 
     if SKIP_WRITE:
         print("  ⏭ 写操作跳过 (TLS_SKIP_WRITE=1)")

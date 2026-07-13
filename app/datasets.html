@@ -41,7 +41,7 @@
     renderHeader('datasets');
     renderPermissionText(document.getElementById('permissionText'));
 
-    function canManage() { return !!getPermissions().account_manage; }
+    function canManage() { return hasPermission('dataset_manage'); }
 
     function resetForm() {
       document.getElementById('datasetName').value = '';
@@ -119,8 +119,16 @@
       }
     });
 
-    resetForm();
-    loadDatasets();
+    refreshPermissions()
+      .then(() => {
+        renderPermissionText(document.getElementById('permissionText'));
+        resetForm();
+        return loadDatasets();
+      })
+      .catch(error => {
+        document.getElementById('status').className = 'status bad';
+        document.getElementById('status').textContent = error.message;
+      });
   </script>
 </body>
 </html>

@@ -137,7 +137,12 @@
       document.getElementById('endTimeFilter').value = '';
       loadChanges();
     });
-    loadChanges();
+    refreshPermissions()
+      .then(loadChanges)
+      .catch(error => {
+        document.getElementById('status').className = 'status bad';
+        document.getElementById('status').textContent = error.message;
+      });
   </script>
 </body>
 </html>
