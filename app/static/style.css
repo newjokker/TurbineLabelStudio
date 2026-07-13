@@ -889,6 +889,32 @@ td code {
   min-width: 0;
   padding: 0 10px;
 }
+.shortcut-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.shortcut-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.shortcut-hint kbd {
+  min-width: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  line-height: 18px;
+  text-align: center;
+}
 .edit-panel {
   overflow: visible;
   display: grid;

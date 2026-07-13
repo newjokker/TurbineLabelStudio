@@ -80,6 +80,10 @@
             <button class="secondary" id="editModeBtn" type="button">进入编辑模式</button>
             <button class="danger hidden" id="deleteAnnotationBtn" type="button" disabled>删除选中标注</button>
           </div>
+          <div class="shortcut-hint" aria-label="快捷键提示">
+            <span><kbd>A</kbd><kbd>D</kbd> 前后切换图片</span>
+            <span><kbd>Ctrl</kbd> + <kbd>Z</kbd> 撤销操作</span>
+          </div>
           <div class="edit-panel hidden" id="editPanel">
             <label>新增标签
               <select id="editLabelSelect" class="hidden" aria-hidden="true" tabindex="-1"></select>
@@ -88,7 +92,6 @@
                 <div class="label-dropdown-menu hidden" id="editLabelMenu"></div>
               </div>
             </label>
-            <span class="muted">Ctrl + Z：撤回刚才一次新增框或删除框</span>
           </div>
           <span class="status hidden" id="status"></span>
         </section>
