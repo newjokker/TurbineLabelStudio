@@ -158,6 +158,8 @@ def _get_actor(session, x_user_id, x_session_id):
     actor = session.query(UserAccount).filter_by(id=int(x_user_id)).first()
     if not actor:
         raise HTTPException(status_code=401, detail="用户不存在")
+    if actor.is_deleted:
+        raise HTTPException(status_code=401, detail="账号已删除")
     if actor.end_time and actor.end_time <= beijing_now():
         raise HTTPException(status_code=403, detail="账号已停用")
     if actor.active_session_id != x_session_id:
@@ -296,6 +298,8 @@ def ensure_runtime_schema():
             conn.exec_driver_sql("ALTER TABLE user_account ADD COLUMN active_session_id VARCHAR(64)")
         if "active_session_time" not in columns:
             conn.exec_driver_sql("ALTER TABLE user_account ADD COLUMN active_session_time DATETIME")
+        if "is_deleted" not in columns:
+            conn.exec_driver_sql("ALTER TABLE user_account ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT 0")
 
 
 @app.get("/")
@@ -349,7 +353,7 @@ def login(payload: LoginPayload):
     try:
         record = (
             session.query(UserAccount)
-            .filter_by(name=payload.name, password=payload.password)
+            .filter_by(name=payload.name, password=payload.password, is_deleted=False)
             .first()
         )
         if not record:
@@ -1488,7 +1492,7 @@ def list_accounts(
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
         _require(session, actor, "account_view")
-        rows = session.query(UserAccount).order_by(UserAccount.id).all()
+        rows = session.query(UserAccount).filter(UserAccount.is_deleted.is_(False)).order_by(UserAccount.id).all()
         return {"items": [_account_dict(session, row) for row in rows], "permission_catalog": _permission_catalog()}
     finally:
         session.close()
@@ -1544,7 +1548,7 @@ def update_account(
         _require(session, actor, "account_manage")
         if payload.role not in ROLE_PERMISSIONS:
             raise HTTPException(status_code=400, detail="角色不合法")
-        record = session.query(UserAccount).filter_by(id=account_id).first()
+        record = session.query(UserAccount).filter_by(id=account_id, is_deleted=False).first()
         if not record:
             raise HTTPException(status_code=404, detail="账号不存在")
         permissions = payload.permissions if payload.permissions is not None else ROLE_PERMISSION_PRESETS[payload.role]
@@ -1582,7 +1586,7 @@ def disable_account(
     try:
         actor = _get_actor(session, x_user_id, x_session_id)
         _require(session, actor, "account_manage")
-        record = session.query(UserAccount).filter_by(id=account_id).first()
+        record = session.query(UserAccount).filter_by(id=account_id, is_deleted=False).first()
         if not record:
             raise HTTPException(status_code=404, detail="账号不存在")
         if record.id == actor.id:
@@ -1594,6 +1598,36 @@ def disable_account(
         session.commit()
         session.refresh(record)
         return {"item": _safe_user(record)}
+    finally:
+        session.close()
+
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account(
+    account_id: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    """业务删除账号：保留历史引用，但立即撤销账号、权限、会话和编辑锁。"""
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "account_manage")
+        record = session.query(UserAccount).filter_by(id=account_id, is_deleted=False).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="账号不存在或已删除")
+        if record.id == actor.id:
+            raise HTTPException(status_code=400, detail="不能删除当前登录账号")
+        before = _account_dict(session, record)
+        session.query(AnnotationLock).filter_by(locked_by=record.id).delete(synchronize_session=False)
+        session.query(UserPermission).filter_by(user_id=record.id).delete(synchronize_session=False)
+        record.is_deleted = True
+        record.end_time = beijing_now()
+        record.active_session_id = None
+        record.active_session_time = None
+        _log(session, actor.id, "delete", "user_account", before)
+        session.commit()
+        return {"ok": True}
     finally:
         session.close()
 

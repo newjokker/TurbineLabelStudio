@@ -2,7 +2,7 @@
 """本地 user_account 表：人员登录信息。"""
 import logging
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Index, Integer, String
 from sqlalchemy.exc import SQLAlchemyError
 
 from dao.database import Base, Session, format_beijing_time
@@ -21,6 +21,7 @@ class UserAccount(Base):
     role = Column(String(50), nullable=False)
     active_session_id = Column(String(64), nullable=True)
     active_session_time = Column(DateTime, nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         CheckConstraint(

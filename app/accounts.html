@@ -145,6 +145,7 @@
           <td><div class="row-actions">
             <button class="secondary" data-edit="${item.id}" ${canManage() ? '' : 'disabled'}>配置权限</button>
             <button class="danger" data-disable="${item.id}" ${canManage() ? '' : 'disabled'}>停用</button>
+            <button class="danger" data-delete="${item.id}" ${canManage() ? '' : 'disabled'}>删除</button>
           </div></td>
         </tr>
       `;
@@ -201,6 +202,7 @@
     document.getElementById('rows').addEventListener('click', async event => {
       const editId = Number(event.target.dataset.edit);
       const disableId = Number(event.target.dataset.disable);
+      const deleteId = Number(event.target.dataset.delete);
       if (editId) {
         const item = accounts.find(row => row.id === editId);
         document.getElementById('accountId').value = item.id;
@@ -218,6 +220,18 @@
         try {
           await apiFetch(`/api/accounts/${disableId}/disable`, { method: 'POST' });
           await loadAccounts();
+        } catch (error) {
+          document.getElementById('status').className = 'status bad';
+          document.getElementById('status').textContent = error.message;
+        }
+      }
+      if (deleteId && confirm('确认删除这个账号？\n\n账号会立即失效并从列表移除，历史标注和操作日志会继续保留。')) {
+        try {
+          await apiFetch(`/api/accounts/${deleteId}`, { method: 'DELETE' });
+          if (Number(document.getElementById('accountId').value) === deleteId) resetForm();
+          await loadAccounts();
+          document.getElementById('status').className = 'status ok';
+          document.getElementById('status').textContent = '账号已删除';
         } catch (error) {
           document.getElementById('status').className = 'status bad';
           document.getElementById('status').textContent = error.message;
