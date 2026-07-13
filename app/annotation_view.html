@@ -49,20 +49,13 @@
           <div class="comment-card-list" id="annotationCommentList">
             <div class="comment-empty">选中标注后查看评论</div>
           </div>
-          <textarea id="annotationCommentInput" placeholder="进入编辑模式后可添加或修改我的评论"></textarea>
-          <div class="comment-actions">
-            <span class="comment-meta" id="commentMetaText">暂无评论</span>
-            <button class="secondary" id="saveAnnotationCommentBtn" type="button" disabled>保存我的评论</button>
+          <div class="comment-editor-area" id="commentEditorArea">
+            <textarea id="annotationCommentInput" placeholder="进入编辑模式后可添加或修改我的评论"></textarea>
+            <div class="comment-actions">
+              <span class="comment-meta" id="commentMetaText">暂无评论</span>
+              <button class="secondary" id="saveAnnotationCommentBtn" type="button" disabled>保存我的评论</button>
+            </div>
           </div>
-          <section class="selected-annotation-panel" aria-label="当前选中标签信息">
-            <div class="selected-info-head">
-              <strong>当前标注</strong>
-              <span id="selectedAnnotationBadge">未选择</span>
-            </div>
-            <div class="selected-info-grid" id="selectedAnnotationInfo">
-              <div class="selected-info-empty">选中标注后显示详细信息</div>
-            </div>
-          </section>
         </section>
         <section class="buc-rail" aria-label="BUC 列表">
           <div class="buc-rail-title">BUC</div>
@@ -168,8 +161,7 @@
     const saveAnnotationCommentBtn = document.getElementById('saveAnnotationCommentBtn');
     const commentTargetText = document.getElementById('commentTargetText');
     const commentMetaText = document.getElementById('commentMetaText');
-    const selectedAnnotationBadge = document.getElementById('selectedAnnotationBadge');
-    const selectedAnnotationInfo = document.getElementById('selectedAnnotationInfo');
+    const commentEditorArea = document.getElementById('commentEditorArea');
     const CHANNEL_ORDER = ['B1A', 'B1B', 'B2A', 'B2B', 'B3A', 'B3B'];
     const IMAGE_WIDTH = 1200;
 
@@ -323,76 +315,6 @@
       return value ? '是' : '否';
     }
 
-    function tableRow(label, value, extraClass = '') {
-      return `
-        <tr class="${extraClass}">
-          <th>${escapeHtml(label)}</th>
-          <td>${escapeHtml(value == null || value === '' ? '-' : String(value))}</td>
-        </tr>
-      `;
-    }
-
-    function tableSection(title, rows) {
-      return `
-        <tbody>
-          <tr class="selected-reference-group"><th colspan="2">${escapeHtml(title)}</th></tr>
-          ${rows.join('')}
-        </tbody>
-      `;
-    }
-
-    function renderSelectedAnnotationInfo() {
-      const item = selectedAnnotation();
-      if (!item) {
-        selectedAnnotationBadge.textContent = '未选择';
-        selectedAnnotationInfo.innerHTML = '<div class="selected-info-empty">选中标注后显示详细信息</div>';
-        return;
-      }
-
-      const x1 = Math.min(item.x1, item.x2);
-      const y1 = Math.min(item.y1, item.y2);
-      const x2 = Math.max(item.x1, item.x2);
-      const y2 = Math.max(item.y1, item.y2);
-      const width = Math.abs(item.x2 - item.x1);
-      const height = Math.abs(item.y2 - item.y1);
-      const label = item.label || `label_id=${item.label_id}`;
-      const color = colorFor(item);
-      const updater = item.update_alias || item.update_by || item.update_name || '未记录';
-      const extraInfo = item.extra_info && typeof item.extra_info === 'object'
-        ? JSON.stringify(item.extra_info)
-        : '';
-
-      selectedAnnotationBadge.textContent = `#${item.id}`;
-      selectedAnnotationInfo.innerHTML = `
-        <table class="selected-reference-table">
-          ${tableSection('基础信息', [
-            tableRow('标注编号', `#${item.id}`),
-            tableRow('标注人', updater),
-            tableRow('BUC', item.buc, 'mono'),
-            tableRow('方法', item.func, 'mono')
-          ])}
-          ${tableSection('标签信息', [
-            tableRow('标签', label),
-            tableRow('标签 ID', item.label_id),
-            `<tr class="mono"><th>颜色</th><td><span class="selected-reference-swatch" style="--chip:${escapeHtml(color)}"></span>${escapeHtml(color)}</td></tr>`,
-            tableRow('困难样本', formatBoolean(item.difficult))
-          ])}
-          ${tableSection('矩形范围', [
-            tableRow('左上角', `${formatCoord(x1)}, ${formatCoord(y1)}`, 'mono'),
-            tableRow('右下角', `${formatCoord(x2)}, ${formatCoord(y2)}`, 'mono'),
-            tableRow('宽 × 高', `${formatCoord(width)} × ${formatCoord(height)}`, 'mono'),
-            tableRow('评论数', `${commentsFor(item).length} 条`)
-          ])}
-          ${tableSection('维护信息', [
-            tableRow('更新时间', item.update_time || '未记录'),
-            tableRow('标签说明', item.label_des || '无标签说明')
-          ])}
-          ${item.update_reason ? tableSection('更新原因', [tableRow('内容', item.update_reason, 'wrap')]) : ''}
-          ${extraInfo && extraInfo !== '{}' ? tableSection('extra_info', [tableRow('JSON', extraInfo, 'mono wrap')]) : ''}
-        </table>
-      `;
-    }
-
     function renderCommentEditor() {
       const item = selectedAnnotation();
       const comments = commentsFor(item);
@@ -414,7 +336,6 @@
           </article>
         `).join('')
         : `<div class="comment-empty">${item ? '该标注暂无评论' : '选中标注后查看评论'}</div>`;
-      renderSelectedAnnotationInfo();
     }
 
     function renderBoxes() {
@@ -484,6 +405,7 @@
       deleteAnnotationBtn.classList.toggle('hidden', !state.editMode);
       deleteAnnotationBtn.disabled = !state.editMode || !state.selectedId;
       imageCanvas.classList.toggle('editing', state.editMode);
+      commentEditorArea.classList.toggle('hidden', !state.editMode);
       renderCommentEditor();
     }
 
