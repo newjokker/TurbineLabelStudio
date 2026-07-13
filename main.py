@@ -540,18 +540,38 @@ def _annotation_change_snapshots(log_record):
     return change, change
 
 
+def _parse_annotation_change_time(value, field_name):
+    if not value:
+        return None
+    normalized = value.strip().replace("T", " ")
+    for time_format in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(normalized, time_format)
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail=f"{field_name}格式应为 YYYY-MM-DD HH:MM[:SS]")
+
+
 @app.get("/api/annotation-changes")
 def annotation_changes(
     user_id: Optional[int] = None,
     label_id: Optional[int] = None,
     buc: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
     x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
 ):
-    """查询标注框审计日志，并按操作人员、标签和 BUC 筛选。"""
+    """查询标注框审计日志，并按操作人员、标签、BUC 和时间范围筛选。"""
     session = Session()
     try:
         _get_actor(session, x_user_id, x_session_id)
+        start_at = _parse_annotation_change_time(start_time, "开始时间")
+        end_at = _parse_annotation_change_time(end_time, "结束时间")
+        if end_at and end_time and len(end_time.strip().replace("T", " ")) == 16:
+            end_at += timedelta(minutes=1) - timedelta(microseconds=1)
+        if start_at and end_at and start_at > end_at:
+            raise HTTPException(status_code=400, detail="开始时间不能晚于结束时间")
         rows = (
             session.query(OperationLog, UserAccount)
             .join(UserAccount, UserAccount.id == OperationLog.role_id)
@@ -585,6 +605,10 @@ def annotation_changes(
             if label_id is not None and label_id not in snapshot_label_ids:
                 continue
             if buc and buc not in snapshot_bucs:
+                continue
+            if start_at and log_record.update_time < start_at:
+                continue
+            if end_at and log_record.update_time > end_at:
                 continue
 
             effective = after or before or {}

@@ -13,10 +13,10 @@
       <div class="page-head">
         <div class="page-title">
           <strong>标注框变动</strong>
-          <span>查看标注框的新增、修改和删除记录，可按人员、标签和 BUC 筛选。</span>
+          <span>查看标注框的新增、修改和删除记录，可按人员、标签、BUC 和时间范围筛选。</span>
         </div>
       </div>
-      <div class="form-grid" id="filters">
+      <div class="form-grid annotation-change-filters" id="filters">
         <label>人员
           <select id="userFilter"><option value="">全部人员</option></select>
         </label>
@@ -25,6 +25,12 @@
         </label>
         <label>BUC
           <select id="bucFilter"><option value="">全部 BUC</option></select>
+        </label>
+        <label>开始时间
+          <input id="startTimeFilter" type="datetime-local" step="60">
+        </label>
+        <label>结束时间
+          <input id="endTimeFilter" type="datetime-local" step="60">
         </label>
         <button class="secondary" type="button" id="resetBtn">清空筛选</button>
       </div>
@@ -95,9 +101,13 @@
       const userId = document.getElementById('userFilter').value;
       const labelId = document.getElementById('labelFilter').value;
       const buc = document.getElementById('bucFilter').value;
+      const startTime = document.getElementById('startTimeFilter').value;
+      const endTime = document.getElementById('endTimeFilter').value;
       if (userId) query.set('user_id', userId);
       if (labelId) query.set('label_id', labelId);
       if (buc) query.set('buc', buc);
+      if (startTime) query.set('start_time', startTime);
+      if (endTime) query.set('end_time', endTime);
       status.className = 'status';
       status.textContent = '加载中...';
       try {
@@ -123,6 +133,8 @@
       document.getElementById('userFilter').value = '';
       document.getElementById('labelFilter').value = '';
       document.getElementById('bucFilter').value = '';
+      document.getElementById('startTimeFilter').value = '';
+      document.getElementById('endTimeFilter').value = '';
       loadChanges();
     });
     loadChanges();

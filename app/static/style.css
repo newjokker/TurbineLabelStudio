@@ -203,6 +203,7 @@ header {
 }
 .form-grid .wide { grid-column: span 2; }
 .form-grid .full { grid-column: 1 / -1; }
+.annotation-change-filters { grid-template-columns: repeat(6, minmax(130px, 1fr)); }
 .toolbar {
   display: flex;
   justify-content: space-between;
