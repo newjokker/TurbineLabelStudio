@@ -734,16 +734,43 @@ def update_annotation_comment(
         extra_info = json_value(record.extra_info)
         if not isinstance(extra_info, dict):
             extra_info = {}
+        comments = extra_info.get("comments")
+        if not isinstance(comments, list):
+            comments = []
+        comments = [item for item in comments if isinstance(item, dict) and item.get("text")]
+
+        # 兼容旧版单条评论，读取后统一写入多人评论列表。
+        legacy_comment = extra_info.pop("comment", None)
+        if isinstance(legacy_comment, str) and legacy_comment.strip():
+            comments.append({"text": legacy_comment.strip(), "update_by": "未知用户"})
+        elif isinstance(legacy_comment, dict) and legacy_comment.get("text"):
+            legacy_id = legacy_comment.get("update_id")
+            if not any(str(item.get("update_id")) == str(legacy_id) for item in comments):
+                comments.append(legacy_comment)
+
         comment_text = (payload.comment or "").strip()
+        own_index = next(
+            (index for index, item in enumerate(comments) if str(item.get("update_id")) == str(actor.id)),
+            None,
+        )
         if comment_text:
-            extra_info["comment"] = {
+            own_comment = {
                 "text": comment_text,
                 "update_id": actor.id,
                 "update_by": actor.alias or actor.name,
                 "update_time": _format_dt(beijing_now()),
             }
+            if own_index is None:
+                comments.append(own_comment)
+            else:
+                comments[own_index] = own_comment
+        elif own_index is not None:
+            comments.pop(own_index)
+
+        if comments:
+            extra_info["comments"] = comments
         else:
-            extra_info.pop("comment", None)
+            extra_info.pop("comments", None)
         record.extra_info = json_text(extra_info)
         record.update_id = actor.id
         record.update_time = beijing_now()
