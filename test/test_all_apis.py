@@ -7,7 +7,7 @@
     python test/test_all_apis.py
 
 环境变量（可选）:
-    TLS_BASE_URL       服务地址（默认 http://127.0.0.1:8765）
+    TLS_BASE_URL       服务地址（默认 http://127.0.0.1:12502
     TLS_USERNAME       登录用户名（默认 txkj）
     TLS_PASSWORD       登录密码（默认 txkj）
     TLS_BUC            测试 BUC（默认 BUC_000001）

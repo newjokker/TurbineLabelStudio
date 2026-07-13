@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib import error, parse, request
 
 
-BASE_URL = os.environ.get("TLS_BASE_URL", "http://127.0.0.1:8765").rstrip("/")
+BASE_URL = os.environ.get("TLS_BASE_URL", "http://127.0.0.1:12502").rstrip("/")
 USERNAME = os.environ.get("TLS_USERNAME", "txkj")
 PASSWORD = os.environ.get("TLS_PASSWORD", "txkj")
 DEFAULT_BUC = os.environ.get("TLS_BUC", "BUC_000001")

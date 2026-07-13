@@ -3,7 +3,8 @@
 import json
 import logging
 import os
-import shutil
+import sqlite3
+import tempfile
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -112,19 +113,57 @@ def drop_incompatible_annotation_table():
     return True
 
 
-def backup_database_once_per_day():
-    """每天保留一份 SQLite 文件备份。"""
+def _backup_sqlite_database(source_path, backup_path):
+    """使用 SQLite 在线备份 API 创建包含 WAL 最新数据的一致快照。"""
+    backup_dir = os.path.dirname(backup_path)
+    os.makedirs(backup_dir, exist_ok=True)
+
+    temp_fd, temp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(backup_path)}.",
+        suffix=".tmp",
+        dir=backup_dir,
+    )
+    os.close(temp_fd)
+
+    source_conn = None
+    backup_conn = None
+    try:
+        source_conn = sqlite3.connect(source_path, timeout=30)
+        backup_conn = sqlite3.connect(temp_path, timeout=30)
+        source_conn.backup(backup_conn)
+        backup_conn.commit()
+
+        integrity_result = backup_conn.execute("PRAGMA integrity_check").fetchone()
+        if not integrity_result or integrity_result[0] != "ok":
+            raise sqlite3.DatabaseError(f"备份完整性检查失败: {integrity_result}")
+
+        backup_conn.close()
+        backup_conn = None
+        source_conn.close()
+        source_conn = None
+        os.replace(temp_path, backup_path)
+        return backup_path
+    finally:
+        if backup_conn is not None:
+            backup_conn.close()
+        if source_conn is not None:
+            source_conn.close()
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def backup_database_once_per_day(force=False):
+    """每天保留一份 SQLite 一致性快照；force=True 时重建当天备份。"""
     if not os.path.exists(LOCAL_LABEL_STUDIO_DB):
         return None
 
     today = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
     backup_path = os.path.join(LABEL_STUDIO_BACKUP_DIR, f"label_studio_{today}.db")
-    if os.path.exists(backup_path):
+    if os.path.exists(backup_path) and not force:
         return backup_path
 
     try:
-        shutil.copy2(LOCAL_LABEL_STUDIO_DB, backup_path)
-        return backup_path
-    except OSError:
+        return _backup_sqlite_database(LOCAL_LABEL_STUDIO_DB, backup_path)
+    except (OSError, sqlite3.Error):
         logging.exception("备份 label_studio 数据库失败 path=%s", backup_path)
         return None
