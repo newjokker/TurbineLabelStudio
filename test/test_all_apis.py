@@ -130,6 +130,14 @@ def test_annotation_view(headers):
     test("  + channels 为 list", isinstance(data.get("channels"), list))
 
 
+def test_annotation_changes(headers):
+    print("\n── 🧾 标注框变动 ──")
+    status, data = request_json("GET", "/api/annotation-changes", headers=headers)
+    test("GET /api/annotation-changes → 200", status == 200, json.dumps(data, ensure_ascii=False)[:120])
+    test("  + items 为 list", isinstance(data.get("items"), list))
+    test("  + filters 包含人员、标签、BUC", all(key in data.get("filters", {}) for key in ("users", "labels", "bucs")))
+
+
 # =============================================================================
 # 标注锁
 # =============================================================================
@@ -380,6 +388,7 @@ def main():
 
     test_labels(headers)
     test_annotation_view(headers)
+    test_annotation_changes(headers)
     test_annotation_lock(headers)
     test_annotations(headers)
     test_public_bucs(headers)

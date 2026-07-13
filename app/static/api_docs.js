@@ -206,6 +206,32 @@ print(f"XML 已保存至: {path}")`,
     ],
   },
   {
+    id: "annotation-changes",
+    title: "🧾 标注框变动 (Annotation Changes)",
+    description: "查询标注框审计记录，仅包含 annotation 表的新增、修改和删除，不包含图片锁和评论日志。",
+    apis: [
+      {
+        method: "GET",
+        path: "/api/annotation-changes",
+        summary: "获取标注框变动记录",
+        description: "可使用 user_id、label_id、buc 任意组合筛选；同时返回页面下拉框需要的人员、标签和 BUC 选项。",
+        query: { user_id: "4", label_id: "23", buc: "BUC_000001" },
+        response: {
+          filters: { users: [], labels: [], bucs: ["BUC_000001"] },
+          count: 1,
+          items: [{ id: 552, act: "create", update_time: "2026-07-13 09:16:44", annotation_id: 15722, buc: "BUC_000020", label_id: 23, label: "标签名称", box: { x1: 822, y1: 812, x2: 1119, y2: 1018 } }],
+        },
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET", "/api/annotation-changes",
+    headers=headers,
+    query={"user_id": 4, "label_id": 23, "buc": "BUC_000001"},
+)
+print(f"符合条件的变动数: {data['count']}")`,
+      },
+    ],
+  },
+  {
     id: "datasets",
     title: "📊 数据集管理 (Datasets)",
     apis: [

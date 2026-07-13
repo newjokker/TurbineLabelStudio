@@ -297,6 +297,11 @@ def annotation_view_page():
     return _page("annotation_view.html")
 
 
+@app.get("/annotation_changes.html")
+def annotation_changes_page():
+    return _page("annotation_changes.html")
+
+
 @app.get("/api_docs.html")
 def api_docs_page():
     return _page("api_docs.html")
@@ -514,6 +519,109 @@ def annotation_view_options(
                 }
                 for buc, func_name in sorted(option_keys)
             ]
+        }
+    finally:
+        session.close()
+
+
+def _annotation_change_snapshots(log_record):
+    """把新旧格式的 annotation 日志统一为 before/after 两个快照。"""
+    change = json_value(log_record.change_info)
+    if not isinstance(change, dict):
+        change = {}
+    if "before" in change or "after" in change:
+        before = change.get("before") if isinstance(change.get("before"), dict) else None
+        after = change.get("after") if isinstance(change.get("after"), dict) else None
+        return before, after
+    if log_record.act == "create":
+        return None, change
+    if log_record.act == "delete":
+        return change, None
+    return change, change
+
+
+@app.get("/api/annotation-changes")
+def annotation_changes(
+    user_id: Optional[int] = None,
+    label_id: Optional[int] = None,
+    buc: Optional[str] = None,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    """查询标注框审计日志，并按操作人员、标签和 BUC 筛选。"""
+    session = Session()
+    try:
+        _get_actor(session, x_user_id, x_session_id)
+        rows = (
+            session.query(OperationLog, UserAccount)
+            .join(UserAccount, UserAccount.id == OperationLog.role_id)
+            .filter(OperationLog.table_name == "annotation")
+            .order_by(OperationLog.id.desc())
+            .all()
+        )
+        label_map = {record.id: record.label for record in session.query(Label).all()}
+        filter_users = {}
+        filter_label_ids = set()
+        filter_bucs = set()
+        items = []
+
+        for log_record, user_record in rows:
+            before, after = _annotation_change_snapshots(log_record)
+            snapshots = [item for item in (before, after) if isinstance(item, dict)]
+            snapshot_user_ids = {log_record.role_id}
+            snapshot_label_ids = {item.get("label_id") for item in snapshots if item.get("label_id") is not None}
+            snapshot_bucs = {item.get("buc") for item in snapshots if item.get("buc")}
+
+            filter_users[log_record.role_id] = {
+                "id": user_record.id,
+                "name": user_record.name,
+                "alias": user_record.alias,
+            }
+            filter_label_ids.update(snapshot_label_ids)
+            filter_bucs.update(snapshot_bucs)
+
+            if user_id is not None and user_id not in snapshot_user_ids:
+                continue
+            if label_id is not None and label_id not in snapshot_label_ids:
+                continue
+            if buc and buc not in snapshot_bucs:
+                continue
+
+            effective = after or before or {}
+            effective_label_id = effective.get("label_id")
+            items.append(
+                {
+                    "id": log_record.id,
+                    "act": log_record.act,
+                    "update_time": _format_dt(log_record.update_time),
+                    "user": filter_users[log_record.role_id],
+                    "annotation_id": effective.get("id"),
+                    "buc": effective.get("buc"),
+                    "func": effective.get("func"),
+                    "label_id": effective_label_id,
+                    "label": label_map.get(effective_label_id),
+                    "box": {
+                        "x1": effective.get("x1"),
+                        "y1": effective.get("y1"),
+                        "x2": effective.get("x2"),
+                        "y2": effective.get("y2"),
+                    },
+                    "before": before,
+                    "after": after,
+                }
+            )
+
+        return {
+            "filters": {
+                "users": sorted(filter_users.values(), key=lambda item: item["id"]),
+                "labels": [
+                    {"id": item_id, "label": label_map.get(item_id) or f"标签 #{item_id}"}
+                    for item_id in sorted(filter_label_ids)
+                ],
+                "bucs": sorted(filter_bucs),
+            },
+            "count": len(items),
+            "items": items,
         }
     finally:
         session.close()

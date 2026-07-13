@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标注框变动 - TurbineLabelStudio</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header id="siteHeader"></header>
+  <main class="page">
+    <section class="panel">
+      <div class="page-head">
+        <div class="page-title">
+          <strong>标注框变动</strong>
+          <span>查看标注框的新增、修改和删除记录，可按人员、标签和 BUC 筛选。</span>
+        </div>
+      </div>
+      <div class="form-grid" id="filters">
+        <label>人员
+          <select id="userFilter"><option value="">全部人员</option></select>
+        </label>
+        <label>标签
+          <select id="labelFilter"><option value="">全部标签</option></select>
+        </label>
+        <label>BUC
+          <select id="bucFilter"><option value="">全部 BUC</option></select>
+        </label>
+        <button class="secondary" type="button" id="resetBtn">清空筛选</button>
+      </div>
+      <div class="toolbar"><span class="status" id="status">加载中...</span></div>
+    </section>
+
+    <section class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th><th>人员</th><th>动作</th><th>BUC / 方法</th>
+            <th>标签</th><th>标注框</th><th>标注 ID</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/static/common.js"></script>
+  <script>
+    requireLogin();
+    renderHeader('annotation_changes');
+
+    const actionText = { create: '新增', update: '修改', delete: '删除' };
+    const actionClass = { create: 'good', update: 'warn', delete: '' };
+    let initialized = false;
+
+    function optionText(user) {
+      return user.alias ? `${user.alias}（${user.name}）` : user.name;
+    }
+
+    function fillSelect(id, items, valueKey, textBuilder) {
+      const select = document.getElementById(id);
+      const current = select.value;
+      const first = select.options[0].outerHTML;
+      select.innerHTML = first + items.map(item =>
+        `<option value="${escapeHtml(item[valueKey])}">${escapeHtml(textBuilder(item))}</option>`
+      ).join('');
+      if ([...select.options].some(option => option.value === current)) select.value = current;
+    }
+
+    function renderRows(items) {
+      document.getElementById('rows').innerHTML = items.map(item => {
+        const user = item.user || {};
+        const box = item.box || {};
+        const labelName = item.label || `标签 #${item.label_id}`;
+        const coordinates = [box.x1, box.y1, box.x2, box.y2].every(value => value !== null && value !== undefined)
+          ? `${Math.round(box.x1)}, ${Math.round(box.y1)} → ${Math.round(box.x2)}, ${Math.round(box.y2)}`
+          : '—';
+        return `
+          <tr>
+            <td><code>${escapeHtml(item.update_time || '—')}</code></td>
+            <td><div class="identity-cell"><strong>${escapeHtml(user.alias || user.name || '未知人员')}</strong><small>${escapeHtml(user.alias ? user.name : '')}</small></div></td>
+            <td><span class="metric-chip ${actionClass[item.act] || ''}">${escapeHtml(actionText[item.act] || item.act)}</span></td>
+            <td><div class="identity-cell"><strong>${escapeHtml(item.buc || '—')}</strong><small>${escapeHtml(item.func || '')}</small></div></td>
+            <td><div class="label-cell"><strong>${escapeHtml(labelName)}</strong><small>ID ${escapeHtml(item.label_id ?? '—')}</small></div></td>
+            <td><code>${escapeHtml(coordinates)}</code></td>
+            <td><code>${escapeHtml(item.annotation_id ?? '—')}</code></td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="7" class="empty-table">没有符合筛选条件的标注框变动</td></tr>';
+    }
+
+    async function loadChanges() {
+      const status = document.getElementById('status');
+      const query = new URLSearchParams();
+      const userId = document.getElementById('userFilter').value;
+      const labelId = document.getElementById('labelFilter').value;
+      const buc = document.getElementById('bucFilter').value;
+      if (userId) query.set('user_id', userId);
+      if (labelId) query.set('label_id', labelId);
+      if (buc) query.set('buc', buc);
+      status.className = 'status';
+      status.textContent = '加载中...';
+      try {
+        const data = await apiFetch(`/api/annotation-changes${query.size ? `?${query}` : ''}`);
+        if (!initialized) {
+          fillSelect('userFilter', data.filters.users || [], 'id', optionText);
+          fillSelect('labelFilter', data.filters.labels || [], 'id', item => item.label);
+          fillSelect('bucFilter', (data.filters.bucs || []).map(value => ({ value })), 'value', item => item.value);
+          initialized = true;
+        }
+        renderRows(data.items || []);
+        status.className = 'status ok';
+        status.textContent = `共 ${data.count || 0} 条标注框变动`;
+      } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+        renderRows([]);
+      }
+    }
+
+    document.getElementById('filters').addEventListener('change', loadChanges);
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      document.getElementById('userFilter').value = '';
+      document.getElementById('labelFilter').value = '';
+      document.getElementById('bucFilter').value = '';
+      loadChanges();
+    });
+    loadChanges();
+  </script>
+</body>
+</html>

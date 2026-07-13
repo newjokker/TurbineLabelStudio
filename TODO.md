@@ -140,5 +140,13 @@ res = get_buc_image_by_func(wav_files, func_name=func_name, save_path=f"{buc}_{f
 
 * 
 
+### 继续完善的部分
+
+* 应该增加一个 api 接口 和 页面（index 页面增加一个条目，新页面使用新的 html文件）获取，标注框变动的信息，页面可以筛选人员和标签和 buc 以及时间
+
+* 标注页面增加 ctrl + z, 撤回当前页面的上一个操作，仅针对删除框和新增框，也仅针对刚才的操作，
+
+
+
 
 

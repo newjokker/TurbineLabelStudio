@@ -173,10 +173,7 @@ header {
   box-shadow: var(--shadow);
   transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
 }
-.grid-links .card:nth-child(1),
-.grid-links .card:nth-child(2) { grid-column: span 3; }
-.grid-links .card:nth-child(3),
-.grid-links .card:nth-child(4) { grid-column: span 3; }
+.grid-links .card { grid-column: span 2; }
 .card:hover {
   background: var(--panel-soft);
   transform: translateY(-1px);
