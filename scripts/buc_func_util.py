@@ -82,6 +82,38 @@ def _detect_wav_data_type(wav_path_list):
     return "blade"
 
 
+def get_wav_image_duration_seconds(wav_path_list):
+    """返回当前 mel 图片1200px横轴对应的实际秒数。
+
+    这里只读取 WAV 头信息，但时长处理规则与 ``wav_paths_to_img_array``
+    保持一致：普通6通道取重采样后的最短长度，blade_ddn 使用补齐后的长度。
+    """
+    data_type = _detect_wav_data_type(wav_path_list)
+    valid_paths = [Path(wav_path) for wav_path in wav_path_list if wav_path is not None]
+    infos = [sf.info(str(wav_path)) for wav_path in valid_paths]
+    sample_rate = infos[0].samplerate
+
+    lengths = [
+        info.frames
+        if info.samplerate == sample_rate
+        else int(np.ceil(info.frames * sample_rate / info.samplerate))
+        for info in infos
+    ]
+
+    if data_type == "blade_ddn":
+        source_length = lengths[0]
+        if source_length < sample_rate:
+            raise ValueError("audio must be at least one second")
+        whole_seconds = int(source_length / sample_rate)
+        if whole_seconds >= 18:
+            image_length = min(source_length, 20 * sample_rate)
+        else:
+            image_length = source_length + (20 - whole_seconds) * sample_rate
+        return image_length / float(sample_rate)
+
+    return min(lengths) / float(sample_rate)
+
+
 def _load_audio_list(wav_paths):
     """Read wav files and normalize them to mono arrays."""
     audio_list = []
@@ -251,4 +283,3 @@ if __name__ == "__main__":
     wav_path = "/Volumes/Jokker/Code/TurbineLabelStudio/2026_05_22_05_40_12_风机F007_叶片1测点B.wav"
     
     wh_jzp_before_20260708([wav_path], "res.jpg")
-    

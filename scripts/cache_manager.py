@@ -10,7 +10,7 @@ from pathlib import Path
 import requests
 from config import IMG_CACHE_DIR, WAV_CACHE_DIR  
 from dao.wav_buc import get_format_wave_md5_info_by_buc  
-from scripts.buc_func_util import get_buc_image_by_func 
+from scripts.buc_func_util import get_buc_image_by_func, get_wav_image_duration_seconds
 
 
 WAV_SUFFIX = ".wav"
@@ -88,6 +88,26 @@ def get_img_path_by_buc_func(buc, func_name):
 
     logging.error("生成图片缓存失败 buc=%s func_name=%s img_path=%s", buc, func_name, img_path)
     return None
+
+
+def get_img_duration_by_buc(buc):
+    """返回 BUC mel 图片横轴实际使用的秒数。"""
+    md5_list = get_ordered_wave_md5_list_by_buc(buc)
+    if not md5_list:
+        return None
+
+    wav_files = []
+    for md5 in md5_list:
+        wav_path = get_wav_path_by_md5(md5)
+        if not wav_path:
+            return None
+        wav_files.append(wav_path)
+
+    try:
+        return get_wav_image_duration_seconds(wav_files)
+    except (OSError, RuntimeError, ValueError):
+        logging.exception("获取 mel 图片时长失败 buc=%s", buc)
+        return None
 
 
 def get_wav_path_by_md5(md5):

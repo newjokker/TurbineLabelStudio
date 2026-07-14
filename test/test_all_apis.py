@@ -128,6 +128,11 @@ def test_annotation_view(headers):
     test("  + buc 匹配", data.get("buc") == DEFAULT_BUC)
     test("  + annotations 为 list", isinstance(data.get("annotations"), list))
     test("  + channels 为 list", isinstance(data.get("channels"), list))
+    test(
+        "  + image_duration_seconds 为有效 mel 横轴时长",
+        isinstance(data.get("image_duration_seconds"), (int, float))
+        and data["image_duration_seconds"] > 0,
+    )
     annotations = data.get("annotations", [])
     if annotations:
         label_id = annotations[0].get("label_id")

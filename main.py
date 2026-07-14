@@ -40,7 +40,7 @@ from dao.user_account import UserAccount
 from dao.user_permission import UserPermission
 from dao.wav_buc import WAV_POSITION_ORDER, WavBuc, generate_next_buc
 from permission_config import PERMISSION_DEFINITIONS, PERMISSION_DEPENDENCIES, ROLE_PERMISSION_PRESETS
-from scripts.cache_manager import get_img_path_by_buc_func, get_wav_path_by_md5
+from scripts.cache_manager import get_img_duration_by_buc, get_img_path_by_buc_func, get_wav_path_by_md5
 from scripts.format_transform import build_annotation_xml
 
 
@@ -761,7 +761,7 @@ def annotation_view_data(
             for position_id in WAV_POSITION_ORDER
         ]
 
-        return {
+        result = {
             "buc": buc,
             "func": func_name,
             "label_id": label_id,
@@ -771,6 +771,10 @@ def annotation_view_data(
         }
     finally:
         session.close()
+
+    # WAV 可能需要从远端补缓存，放在数据库会话关闭后执行。
+    result["image_duration_seconds"] = get_img_duration_by_buc(buc)
+    return result
 
 
 @app.get("/api/annotation-view/image")

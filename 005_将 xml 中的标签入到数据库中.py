@@ -26,7 +26,7 @@ for each in csv_info[1:]:
 
 
 index = 0
-for each in FileOperationUtil.re_all_file("/Volumes/Jokker/Code/TurbineLabelStudio/data/20260604", endswitch=[".xml"]):
+for each in FileOperationUtil.re_all_file("/Users/jokkerling/Desktop/20260604", endswitch=[".xml"]):
     a = DeteRes(each)
     
     file_name = FileOperationUtil.bang_path(each)[1]
@@ -54,5 +54,4 @@ for each in FileOperationUtil.re_all_file("/Volumes/Jokker/Code/TurbineLabelStud
                     add_annotation(buc=buc, func="wh_jzp_before_20260708", x1=obj.x1, x2=obj.x2, y1=obj.y1, y2=obj.y2, label_id=label_id, update_id=1, difficult=False, extra_info=None)
                 else:
                     print(f"label 未注册:{obj.tag}")
-
 

@@ -1080,15 +1080,17 @@
     function formatTime(seconds) {
       if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
       const minutes = Math.floor(seconds / 60);
-      const remain = Math.floor(seconds % 60).toString().padStart(2, '0');
+      const remain = (seconds % 60).toFixed(2).padStart(5, '0');
       return `${minutes}:${remain}`;
     }
 
     function updateAudioTime() {
-      const duration = activeAudio.duration || 0;
+      const audioDuration = Number(activeAudio.duration || 0);
+      const duration = audioDuration ? Math.min(audioDuration, imageDuration()) : 0;
       audioProgress.max = duration || 0;
-      audioProgress.value = activeAudio.currentTime || 0;
-      audioTime.textContent = `${formatTime(activeAudio.currentTime)} / ${formatTime(duration)}`;
+      audioProgress.value = Math.min(activeAudio.currentTime || 0, duration);
+      const displayCurrentTime = Math.min(activeAudio.currentTime || 0, duration);
+      audioTime.textContent = `${formatTime(displayCurrentTime)} / ${formatTime(duration)}`;
       updatePlayhead();
     }
 
@@ -1131,13 +1133,19 @@
       return Number(activeAudio.duration || 0);
     }
 
+    function imageDuration() {
+      const duration = Number(state.data?.image_duration_seconds || 0);
+      return duration > 0 ? duration : currentDuration();
+    }
+
     function annotationTimeRange(item) {
-      const duration = currentDuration();
-      if (!item || !duration) return null;
+      const duration = imageDuration();
+      const audioDuration = currentDuration();
+      if (!item || !duration || !audioDuration) return null;
       const left = Math.max(0, Math.min(item.x1, item.x2));
       const right = Math.min(IMAGE_WIDTH, Math.max(item.x1, item.x2));
       const start = left / IMAGE_WIDTH * duration;
-      const end = right / IMAGE_WIDTH * duration;
+      const end = Math.min(right / IMAGE_WIDTH * duration, audioDuration);
       if (end <= start) return null;
       return { start, end };
     }
@@ -1185,7 +1193,7 @@
     }
 
     function updatePlayhead() {
-      const duration = currentDuration();
+      const duration = imageDuration();
       if (!duration || activeAudio.paused) {
         hidePlayhead();
         return;
