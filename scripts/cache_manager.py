@@ -10,7 +10,11 @@ from pathlib import Path
 import requests
 from config import IMG_CACHE_DIR, WAV_CACHE_DIR  
 from dao.wav_buc import get_format_wave_md5_info_by_buc  
-from scripts.buc_func_util import get_buc_image_by_func, get_wav_image_duration_seconds
+from scripts.buc_func_util import (
+    get_buc_image_by_func,
+    get_wav_image_duration_seconds,
+    is_valid_mel_image_file,
+)
 
 
 WAV_SUFFIX = ".wav"
@@ -68,7 +72,13 @@ def get_img_path_by_buc_func(buc, func_name):
 
     img_path = _get_img_cache_path(buc, func_name)
     if os.path.isfile(img_path):
-        return img_path
+        if is_valid_mel_image_file(img_path):
+            return img_path
+        logging.warning("检测到异常图片缓存，准备重新生成 buc=%s path=%s", buc, img_path)
+        try:
+            os.remove(img_path)
+        except FileNotFoundError:
+            pass
 
     md5_list = get_ordered_wave_md5_list_by_buc(buc)
     if not md5_list:
@@ -83,9 +93,11 @@ def get_img_path_by_buc_func(buc, func_name):
 
     os.makedirs(os.path.dirname(img_path), exist_ok=True)
     res = get_buc_image_by_func(wav_files, func_name=func_name, save_path=img_path)
-    if res and os.path.isfile(img_path):
+    if res and is_valid_mel_image_file(img_path):
         return img_path
 
+    if os.path.isfile(img_path):
+        os.remove(img_path)
     logging.error("生成图片缓存失败 buc=%s func_name=%s img_path=%s", buc, func_name, img_path)
     return None
 

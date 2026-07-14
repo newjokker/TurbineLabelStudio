@@ -1,13 +1,16 @@
 
 from pathlib import Path
+import os
+import tempfile
+import threading
 import cv2
 import librosa
 import numpy as np
 import soundfile as sf
 import matplotlib
 matplotlib.use('Agg')  
-from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from scipy import signal
 
@@ -21,6 +24,10 @@ DEFAULT_IMAGE_CONFIG = {
     "filter_order": 5,
     "reorder": [0, 1, 2, 3, 4, 5],
 }
+
+IMAGE_WIDTH = 1200
+IMAGE_HEIGHT = 1200
+_MATPLOTLIB_RENDER_LOCK = threading.Lock()
 
 
 def get_buc_image_by_func(file_list, func_name, save_path):
@@ -214,67 +221,96 @@ def _highpass_filter(audio, sample_rate, cutoff_freq, filter_order):
 def _draw_mel_image(mel_list, sample_rate, config):
     """Draw mel spectrograms into one stacked image."""
     max_power = max(float(np.max(mel)) for mel in mel_list if mel is not None)
-    fig, axes = plt.subplots(nrows=6, ncols=1, figsize=(12, 12), sharex="all", sharey="all")
-    for row_index, wav_index in enumerate(config["reorder"]):
-        ax = axes[row_index]
-        mel = mel_list[wav_index]
-        if mel is not None:
-            librosa.display.specshow(
-                librosa.power_to_db(mel, ref=max_power),
-                sr=sample_rate,
-                x_axis="time",
-                y_axis="mel",
-                fmax=config["fmax"],
-                ax=ax,
-                cmap="viridis",
-                vmin=-50,
-                vmax=0,
+    # Matplotlib 的 pyplot 当前 Figure 是全局状态，并发时会互相干扰。
+    # 使用独立 Figure 并加锁，确保去边距设置作用于正在渲染的图片。
+    with _MATPLOTLIB_RENDER_LOCK:
+        fig = Figure(figsize=(12, 12), dpi=100)
+        axes = fig.subplots(nrows=6, ncols=1, sharex="all", sharey="all")
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
+
+        for row_index, wav_index in enumerate(config["reorder"]):
+            ax = axes[row_index]
+            mel = mel_list[wav_index]
+            if mel is not None:
+                librosa.display.specshow(
+                    librosa.power_to_db(mel, ref=max_power),
+                    sr=sample_rate,
+                    x_axis="time",
+                    y_axis="mel",
+                    fmax=config["fmax"],
+                    ax=ax,
+                    cmap="viridis",
+                    vmin=-50,
+                    vmax=0,
+                )
+                ax.set_ylim(0, config["fmax"])
+            ax.set_axis_off()
+
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        width, height = canvas.get_width_height()
+
+        if hasattr(canvas, "tostring_argb"):
+            img_array = np.frombuffer(canvas.tostring_argb(), dtype="uint8").reshape(
+                (height, width, 4)
+            )[:, :, 1:4]
+        elif hasattr(canvas, "tostring_rgb"):
+            img_array = np.frombuffer(canvas.tostring_rgb(), dtype="uint8").reshape(
+                (height, width, 3)
             )
-            ax.set_ylim(0, config["fmax"])
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.tick_params(left=False, bottom=False)
-        ax.set_frame_on(False)
-        ax.set_ylabel("")
-        ax.set_xlabel("")
-    plt.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
-    
-    canvas = FigureCanvas(fig)
-    canvas.draw()
-    
-    # 修改这部分：使用 tostring_argb() 替代 tostring_rgb()
-    width, height = canvas.get_width_height()
-    
-    # 兼容不同版本的 Matplotlib
-    if hasattr(canvas, 'tostring_argb'):
-        # 使用 ARGB 格式，移除 Alpha 通道
-        img_array = np.frombuffer(canvas.tostring_argb(), dtype="uint8").reshape(
-            (height, width, 4)
-        )[:, :, 1:4]  # 取 RGB 通道
-    elif hasattr(canvas, 'tostring_rgb'):
-        # 旧版本使用 RGB 格式
-        img_array = np.frombuffer(canvas.tostring_rgb(), dtype="uint8").reshape(
-            (height, width, 3)
-        )
-    else:
-        # 备用方案：使用 buffer_rgba
-        buffer = canvas.buffer_rgba()
-        img_array = np.frombuffer(buffer, dtype="uint8").reshape(
-            (height, width, 4)
-        )[:, :, :3]
-    
-    plt.close(fig)
+        else:
+            buffer = canvas.buffer_rgba()
+            img_array = np.frombuffer(buffer, dtype="uint8").reshape(
+                (height, width, 4)
+            )[:, :, :3]
+        fig.clear()
+
+    if img_array.shape[:2] != (IMAGE_HEIGHT, IMAGE_WIDTH):
+        raise RuntimeError(f"mel image size invalid: {img_array.shape[:2]}")
     return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
+
+def is_valid_mel_image_file(image_path):
+    """检查缓存图尺寸，以及左右边缘是否被 Matplotlib 默认白边占据。"""
+    path = Path(image_path)
+    if not path.is_file():
+        return False
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+        image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+    except (OSError, ValueError):
+        return False
+    if image is None or image.shape[:2] != (IMAGE_HEIGHT, IMAGE_WIDTH):
+        return False
+
+    white = np.all(image >= 245, axis=2)
+    edge_width = 5
+    left_content_ratio = float(np.mean(~white[:, :edge_width]))
+    right_content_ratio = float(np.mean(~white[:, -edge_width:]))
+    return left_content_ratio >= 0.05 and right_content_ratio >= 0.05
+
+
 def _write_img_array(img_array, output_path):
-    """Write an OpenCV image array to the output path."""
+    """先写临时文件再原子替换，避免并发请求读到半张 JPG。"""
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     suffix = path.suffix or ".jpg"
     success, encoded = cv2.imencode(suffix, img_array)
     if not success:
         raise RuntimeError(f"image encode failed: {path}")
-    encoded.tofile(str(path))
+
+    temp_fd, temp_path = tempfile.mkstemp(
+        prefix=f".{path.stem}.",
+        suffix=suffix,
+        dir=str(path.parent),
+    )
+    os.close(temp_fd)
+    try:
+        encoded.tofile(temp_path)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
     return path
 
 
