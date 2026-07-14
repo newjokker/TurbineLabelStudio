@@ -18,7 +18,10 @@ RUN pip install -i https://mirrors.aliyun.com/pypi/simple \
     fabric \
     numpy \
     soundfile \
-    scipy
+    scipy \
+    opencv-python \
+    librosa \
+    matplotlib
 
 COPY ./ /usr/src/app
 
