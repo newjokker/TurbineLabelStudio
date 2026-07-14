@@ -1,271 +1,26 @@
 
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Generate one stacked mel jpg from exactly 6 wav files.
-
-This version is intentionally light on dependencies for TurbineLabelStudio:
-it only needs numpy, scipy and soundfile. It does not call the original
-dcu_interface WavList/DataGroup helpers, and it does not require librosa,
-matplotlib, opencv, pillow, or noisereduce.
-"""
-
-import argparse
-import os
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
-
+import cv2
+import librosa
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, filtfilt, stft
+import matplotlib
+matplotlib.use('Agg')  
+from matplotlib import pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
+from scipy import signal
 
 
-PathLike = Union[str, os.PathLike]
-
-DEFAULT_MEL_CONFIG = {
+DEFAULT_IMAGE_CONFIG = {
     "n_fft": 2048,
     "hop_length": 512,
     "n_mels": 128,
     "fmax": 24000,
     "cutoff_freq": 500,
     "filter_order": 5,
-    "reorder": [0,1,2,3,4,5],
-    "output_width": 1200,
-    "row_height": 200,
-    "vmin_db": -50,
-    "vmax_db": 0,
+    "reorder": [0, 1, 2, 3, 4, 5],
 }
-
-VIRIDIS_ANCHORS = np.array(
-    [
-        [68, 1, 84],
-        [72, 35, 116],
-        [64, 67, 135],
-        [52, 94, 141],
-        [41, 120, 142],
-        [32, 144, 140],
-        [34, 167, 132],
-        [68, 190, 112],
-        [121, 209, 81],
-        [189, 223, 38],
-        [253, 231, 37],
-    ],
-    dtype=np.float32,
-)
-
-
-def _validate_wav_files(wav_files: Sequence[str]) -> List[str]:
-    if len(wav_files) != 6:
-        raise ValueError("wav_files 必须正好传入 6 个 wav 文件")
-
-    wav_paths = [str(Path(p).expanduser().resolve()) for p in wav_files]
-    for wav_path in wav_paths:
-        if not Path(wav_path).is_file():
-            raise FileNotFoundError(f"wav 文件不存在: {wav_path}")
-    return wav_paths
-
-
-def _to_mono(data: np.ndarray) -> np.ndarray:
-    data = np.asarray(data, dtype=np.float32)
-    if data.ndim == 1:
-        return data
-    return np.mean(data, axis=1).astype(np.float32)
-
-
-def _repeat_audio_to_20_seconds(data: np.ndarray, sr: int) -> np.ndarray:
-    if data is None or len(data) < sr:
-        return data
-
-    seconds = int(len(data) / sr)
-    if seconds == 0 or seconds >= 18:
-        return data
-
-    energies = [np.sum(data[i * sr:(i + 1) * sr] ** 2) for i in range(seconds)]
-    quietest_idx = int(np.argmin(energies))
-    quietest = data[quietest_idx * sr:(quietest_idx + 1) * sr]
-
-    seconds_to_fill = 20 - seconds
-    fill_front = seconds_to_fill // 2
-    fill_back = seconds_to_fill - fill_front
-    return np.concatenate([np.tile(quietest, fill_front), data, np.tile(quietest, fill_back)]).astype(np.float32)
-
-
-def _highpass_filter(data: np.ndarray, sr: int, cutoff: float, order: int) -> np.ndarray:
-    nyquist = 0.5 * sr
-    if cutoff <= 0 or cutoff >= nyquist:
-        return data.astype(np.float32)
-    b, a = butter(order, cutoff / nyquist, btype="high", analog=False)
-    return filtfilt(b, a, data).astype(np.float32)
-
-
-def _read_wav_for_mel(wav_path: str) -> Tuple[np.ndarray, int]:
-    data, sr = sf.read(wav_path)
-    data = _to_mono(data)
-    data = _repeat_audio_to_20_seconds(data, int(sr))
-    return data, int(sr)
-
-
-def _hz_to_mel(freq_hz: np.ndarray) -> np.ndarray:
-    return 2595.0 * np.log10(1.0 + freq_hz / 700.0)
-
-
-def _mel_to_hz(mel: np.ndarray) -> np.ndarray:
-    return 700.0 * (10.0 ** (mel / 2595.0) - 1.0)
-
-
-def _mel_filterbank(sr: int, n_fft: int, n_mels: int, fmax: float) -> np.ndarray:
-    fmax = min(float(fmax), sr / 2.0)
-    mel_points = np.linspace(_hz_to_mel(np.array([0.0]))[0], _hz_to_mel(np.array([fmax]))[0], n_mels + 2)
-    hz_points = _mel_to_hz(mel_points)
-    fft_freqs = np.linspace(0.0, sr / 2.0, n_fft // 2 + 1)
-
-    filters = np.zeros((n_mels, len(fft_freqs)), dtype=np.float32)
-    for i in range(n_mels):
-        left, center, right = hz_points[i], hz_points[i + 1], hz_points[i + 2]
-        if center <= left or right <= center:
-            continue
-        rising = (fft_freqs - left) / (center - left)
-        falling = (right - fft_freqs) / (right - center)
-        filters[i] = np.maximum(0.0, np.minimum(rising, falling))
-    return filters
-
-
-def _make_mel(data: np.ndarray, sr: int, config: dict) -> np.ndarray:
-    filtered = _highpass_filter(
-        data,
-        sr,
-        cutoff=config["cutoff_freq"],
-        order=config["filter_order"],
-    )
-    _, _, zxx = stft(
-        filtered,
-        fs=sr,
-        window="hann",
-        nperseg=config["n_fft"],
-        noverlap=config["n_fft"] - config["hop_length"],
-        nfft=config["n_fft"],
-        boundary=None,
-        padded=False,
-    )
-    power = np.abs(zxx) ** 2
-    mel_filters = _mel_filterbank(sr, config["n_fft"], config["n_mels"], config["fmax"])
-    return np.maximum(np.dot(mel_filters, power), 1e-12)
-
-
-def _power_to_db(mel: np.ndarray, ref_power: float) -> np.ndarray:
-    return 10.0 * np.log10(np.maximum(mel, 1e-12) / max(ref_power, 1e-12))
-
-
-def _resize_2d(values: np.ndarray, target_h: int, target_w: int) -> np.ndarray:
-    src_h, src_w = values.shape
-    x_old = np.arange(src_w)
-    x_new = np.linspace(0, src_w - 1, target_w)
-    resized_w = np.empty((src_h, target_w), dtype=np.float32)
-    for row in range(src_h):
-        resized_w[row] = np.interp(x_new, x_old, values[row])
-
-    y_old = np.arange(src_h)
-    y_new = np.linspace(0, src_h - 1, target_h)
-    resized = np.empty((target_h, target_w), dtype=np.float32)
-    for col in range(target_w):
-        resized[:, col] = np.interp(y_new, y_old, resized_w[:, col])
-    return resized
-
-
-def _apply_viridis(normalized: np.ndarray) -> np.ndarray:
-    normalized = np.clip(normalized, 0.0, 1.0)
-    positions = normalized * (len(VIRIDIS_ANCHORS) - 1)
-    left = np.floor(positions).astype(np.int32)
-    right = np.clip(left + 1, 0, len(VIRIDIS_ANCHORS) - 1)
-    frac = (positions - left)[..., None]
-    rgb = VIRIDIS_ANCHORS[left] * (1.0 - frac) + VIRIDIS_ANCHORS[right] * frac
-    return np.clip(rgb, 0, 255).astype(np.uint8)
-
-
-def _mel_to_rgb_row(mel: np.ndarray, ref_power: float, config: dict) -> np.ndarray:
-    mel_db = _power_to_db(mel, ref_power)
-    mel_db = _resize_2d(mel_db, config["row_height"], config["output_width"])
-    mel_db = np.flipud(mel_db)
-    normalized = (mel_db - config["vmin_db"]) / (config["vmax_db"] - config["vmin_db"])
-    return _apply_viridis(normalized)
-
-
-def _write_ppm(rgb: np.ndarray, ppm_path: Path) -> None:
-    h, w, _ = rgb.shape
-    header = f"P6\n{w} {h}\n255\n".encode("ascii")
-    ppm_path.write_bytes(header + np.ascontiguousarray(rgb).tobytes())
-
-
-def _save_rgb_image(rgb: np.ndarray, output_path: Path) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        ppm_path = Path(tmpdir) / "stacked.ppm"
-        _write_ppm(rgb, ppm_path)
-
-        sips = shutil.which("sips")
-        if sips:
-            subprocess.run(
-                [sips, "-s", "format", "jpeg", str(ppm_path), "--out", str(output_path)],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return
-
-        ffmpeg = shutil.which("ffmpeg")
-        if ffmpeg:
-            subprocess.run(
-                [ffmpeg, "-y", "-loglevel", "error", "-i", str(ppm_path), str(output_path)],
-                check=True,
-            )
-            return
-
-        magick = shutil.which("magick") or shutil.which("convert")
-        if magick:
-            subprocess.run([magick, str(ppm_path), str(output_path)], check=True)
-            return
-
-        raise RuntimeError("无法保存 jpg：需要系统存在 sips、ffmpeg、magick/convert 中的任意一个")
-
-
-def wavs_to_stacked_mel_image(
-    wav_files: Sequence[str],
-    mel_config: Optional[dict] = None,
-) -> np.ndarray:
-    """将 6 个 wav 转成纵向拼接的梅尔频谱 RGB 图片数组。"""
-    config = dict(DEFAULT_MEL_CONFIG)
-    if mel_config:
-        config.update(mel_config)
-
-    wav_paths = _validate_wav_files(wav_files)
-    wav_datas = [_read_wav_for_mel(wav_path) for wav_path in wav_paths]
-    min_length = min(len(data) / sr for data, sr in wav_datas)
-    if min_length < 9:
-        raise ValueError("wav 时长过短，最短音频不足 9 秒")
-
-    target_mels = []
-    max_power = -np.inf
-    for data, sr in wav_datas:
-        target_len = int(min_length * sr)
-        mel = _make_mel(data[:target_len], sr, config)
-        target_mels.append(mel)
-        max_power = max(max_power, float(np.max(mel)))
-
-    rows = []
-    for wav_idx in config["reorder"]:
-        rows.append(_mel_to_rgb_row(target_mels[wav_idx], max_power, config))
-    return np.vstack(rows)
-
-
-def wh_jzp_before_20260708(wav_files, jpg_path, mel_config = None,):
-    """将 6 个 wav 生成梅尔频谱拼接图，并保存为 jpg。"""
-    
-    output_path = Path(jpg_path).expanduser().resolve()
-    rgb = wavs_to_stacked_mel_image(wav_files, mel_config=mel_config)
-    _save_rgb_image(rgb, output_path)
-    return str(output_path)
 
 
 def get_buc_image_by_func(file_list, func_name, save_path):
@@ -275,22 +30,225 @@ def get_buc_image_by_func(file_list, func_name, save_path):
     if func_name == "wh_jzp_before_20260708":
         return wh_jzp_before_20260708(file_list, save_path)
 
+def wh_jzp_before_20260708(wav_files, jpg_path):
+    """将 6 个 wav 生成梅尔频谱拼接图，并保存为 jpg。"""
+    
+    output_path = Path(jpg_path).expanduser().resolve()
+    return generate_wav_image(wav_files, output_path)
+
+def generate_wav_image(wav_path_list, output_path):
+    """
+    Generate a stacked mel image from ordered wav paths.
+
+    wav_path_list must be ordered by measurement point:
+    [1A, 1B, 2A, 2B, 3A, 3B].
+    Fill missing measurement points with None to keep their rows blank.
+    """
+    data_type = _detect_wav_data_type(wav_path_list)
+    img_array = wav_paths_to_img_array(wav_path_list, DEFAULT_IMAGE_CONFIG, data_type=data_type)
+    return _write_img_array(img_array, output_path)
 
 
-def test():
+def wav_paths_to_img(wav_items, data_type, output_path, status=None, collect_time=None, image_config=None):
+    """Generate a mel voiceprint image from wav paths and point metadata."""
+    wav_paths = _extract_wav_paths(wav_items)
+    img_array = wav_paths_to_img_array(wav_paths, image_config or DEFAULT_IMAGE_CONFIG, data_type=data_type)
+    return _write_img_array(img_array, output_path)
 
-    wav_list = [
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/0b6fab18df34d68627ba81468806fd70.wav",
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/174586a5f685b88966ce5c8eb50cff50.wav",
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/aceb8572766c154d7e1078fd11e0df6a.wav",
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/c5e8b0b8e8cefffe340c5c6e27d8d910.wav",
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/dc25c98eb680ba32a76918a6c294450f.wav",
-        "/Volumes/Jokker/Code/TurbineLabelStudio/data/test/BUC_000086/e311a986c3368ccca5c0031505f76c3d.wav",
-    ]
 
-    saved_path = wh_jzp_before_20260708(wav_list, "res.jpg")
-    print(f"梅尔拼接图已保存: {saved_path}")
+def wav_paths_to_img_array(wav_paths, image_config=None, data_type="blade"):
+    """Convert wav paths to a six-channel mel image array."""
+    config = {**DEFAULT_IMAGE_CONFIG, **(image_config or {})}
+    audio_list, sample_rate = _load_audio_list(wav_paths)
+    audio_list = _prepare_audio_list(audio_list, sample_rate, data_type)
+    mel_list = [_audio_to_mel(audio, sample_rate, config) if audio is not None else None for audio in audio_list]
+    return _draw_mel_image(mel_list, sample_rate, config)
+
+
+def _extract_wav_paths(wav_items):
+    """Extract wav paths from point metadata."""
+    if not wav_items:
+        raise ValueError("wav_items cannot be empty")
+    return [item["wav_path"] for item in wav_items]
+
+
+def _detect_wav_data_type(wav_path_list):
+    """Detect data type from ordered wav path sizes."""
+    valid_paths = [Path(wav_path) for wav_path in wav_path_list if wav_path is not None]
+    if not valid_paths:
+        raise ValueError("wav_path_list must contain at least one real wav path")
+    if any(path.stat().st_size < 1024 * 1024 for path in valid_paths):
+        return "blade_ddn"
+    return "blade"
+
+
+def _load_audio_list(wav_paths):
+    """Read wav files and normalize them to mono arrays."""
+    audio_list = []
+    sample_rate = None
+    for wav_path in wav_paths:
+        if wav_path is None:
+            audio_list.append(None)
+            continue
+        audio, current_sample_rate = sf.read(str(wav_path))
+        if audio.ndim > 1:
+            audio = np.mean(audio, axis=1)
+        if sample_rate is None:
+            sample_rate = current_sample_rate
+        elif current_sample_rate != sample_rate:
+            audio = librosa.resample(audio.astype(np.float32), orig_sr=current_sample_rate, target_sr=sample_rate)
+        audio_list.append(audio.astype(np.float32))
+    if sample_rate is None:
+        raise ValueError("wav_paths must contain at least one real wav path")
+    return audio_list, sample_rate
+
+
+def _fill_audio_list(audio_list, target_count=6):
+    """Pad audio channels to the target count with empty placeholders."""
+    if len(audio_list) > target_count:
+        return audio_list[:target_count]
+    return audio_list + [None] * (target_count - len(audio_list))
+
+
+def _prepare_audio_list(audio_list, sample_rate, data_type):
+    """Prepare audio channels according to the data type."""
+    if data_type == "blade_ddn":
+        return _prepare_blade_ddn_audio_list(audio_list, sample_rate)
+    audio_list = _fill_audio_list(audio_list)
+    return _trim_to_min_length(audio_list, sample_rate)
+
+
+def _prepare_blade_ddn_audio_list(audio_list, sample_rate):
+    """Repeat one blade_ddn wav to 20 seconds and copy it to rows one, three, and five."""
+    source_audio = next((audio for audio in audio_list if audio is not None), None)
+    if source_audio is None:
+        raise ValueError("blade_ddn requires at least one wav file")
+    audio = _repeat_audio_to_20_seconds(source_audio, sample_rate)
+    return [audio.copy(), None, audio.copy(), None, audio.copy(), None]
+
+
+def _repeat_audio_to_20_seconds(audio, sample_rate):
+    """Pad audio to 20 seconds with the quietest one-second segment."""
+    if audio is None or len(audio) < sample_rate:
+        raise ValueError("audio must be at least one second")
+    seconds = int(len(audio) / sample_rate)
+    if seconds >= 18:
+        return audio[:20 * sample_rate]
+    quietest_index = int(np.argmin([
+        np.sum(audio[index * sample_rate:(index + 1) * sample_rate] ** 2)
+        for index in range(seconds)
+    ]))
+    quietest = audio[quietest_index * sample_rate:(quietest_index + 1) * sample_rate]
+    seconds_to_fill = 20 - seconds
+    fill_front = seconds_to_fill // 2
+    fill_back = seconds_to_fill - fill_front
+    return np.concatenate([
+        np.tile(quietest, fill_front),
+        audio,
+        np.tile(quietest, fill_back),
+    ])
+
+
+def _trim_to_min_length(audio_list, sample_rate):
+    """Trim all existing channels to the same shortest duration."""
+    valid_audio = [audio for audio in audio_list if audio is not None and len(audio) > 0]
+    if not valid_audio:
+        raise ValueError("no readable wav audio")
+    min_length = min(len(audio) for audio in valid_audio)
+    min_length = max(min_length, min(sample_rate, min_length))
+    return [audio[:min_length] if audio is not None else None for audio in audio_list]
+
+
+def _audio_to_mel(audio, sample_rate, config):
+    """Convert one audio channel to a denoised mel spectrogram."""
+    filtered = _highpass_filter(audio, sample_rate, config["cutoff_freq"], config["filter_order"])
+    return librosa.feature.melspectrogram(
+        y=filtered,
+        sr=sample_rate,
+        n_fft=config["n_fft"],
+        hop_length=config["hop_length"],
+        win_length=config["n_fft"],
+        n_mels=config["n_mels"],
+        fmax=config["fmax"],
+    )
+
+
+def _highpass_filter(audio, sample_rate, cutoff_freq, filter_order):
+    """Apply a high-pass filter before mel conversion."""
+    sos = signal.butter(filter_order, cutoff_freq, btype="highpass", fs=sample_rate, output="sos")
+    return signal.sosfiltfilt(sos, audio)
+
+
+def _draw_mel_image(mel_list, sample_rate, config):
+    """Draw mel spectrograms into one stacked image."""
+    max_power = max(float(np.max(mel)) for mel in mel_list if mel is not None)
+    fig, axes = plt.subplots(nrows=6, ncols=1, figsize=(12, 12), sharex="all", sharey="all")
+    for row_index, wav_index in enumerate(config["reorder"]):
+        ax = axes[row_index]
+        mel = mel_list[wav_index]
+        if mel is not None:
+            librosa.display.specshow(
+                librosa.power_to_db(mel, ref=max_power),
+                sr=sample_rate,
+                x_axis="time",
+                y_axis="mel",
+                fmax=config["fmax"],
+                ax=ax,
+                cmap="viridis",
+                vmin=-50,
+                vmax=0,
+            )
+            ax.set_ylim(0, config["fmax"])
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.tick_params(left=False, bottom=False)
+        ax.set_frame_on(False)
+        ax.set_ylabel("")
+        ax.set_xlabel("")
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0, hspace=0, wspace=0)
+    
+    canvas = FigureCanvas(fig)
+    canvas.draw()
+    
+    # 修改这部分：使用 tostring_argb() 替代 tostring_rgb()
+    width, height = canvas.get_width_height()
+    
+    # 兼容不同版本的 Matplotlib
+    if hasattr(canvas, 'tostring_argb'):
+        # 使用 ARGB 格式，移除 Alpha 通道
+        img_array = np.frombuffer(canvas.tostring_argb(), dtype="uint8").reshape(
+            (height, width, 4)
+        )[:, :, 1:4]  # 取 RGB 通道
+    elif hasattr(canvas, 'tostring_rgb'):
+        # 旧版本使用 RGB 格式
+        img_array = np.frombuffer(canvas.tostring_rgb(), dtype="uint8").reshape(
+            (height, width, 3)
+        )
+    else:
+        # 备用方案：使用 buffer_rgba
+        buffer = canvas.buffer_rgba()
+        img_array = np.frombuffer(buffer, dtype="uint8").reshape(
+            (height, width, 4)
+        )[:, :, :3]
+    
+    plt.close(fig)
+    return cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+def _write_img_array(img_array, output_path):
+    """Write an OpenCV image array to the output path."""
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = path.suffix or ".jpg"
+    success, encoded = cv2.imencode(suffix, img_array)
+    if not success:
+        raise RuntimeError(f"image encode failed: {path}")
+    encoded.tofile(str(path))
+    return path
 
 
 if __name__ == "__main__":
-    test()
+    
+    wav_path = "/Volumes/Jokker/Code/TurbineLabelStudio/2026_05_22_05_40_12_风机F007_叶片1测点B.wav"
+    
+    wh_jzp_before_20260708([wav_path], "res.jpg")
+    
