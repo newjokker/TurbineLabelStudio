@@ -236,6 +236,11 @@ def test_annotations(headers):
 def test_public_bucs(headers):
     print("\n── 📦 公开 BUC 数据 ──")
 
+    status, data = request_json("GET", "/api/public/bucs", headers=headers)
+    test("GET /api/public/bucs → 200", status == 200, json.dumps(data, ensure_ascii=False)[:120])
+    test("  + items 为 list", isinstance(data.get("items"), list))
+    test("  + count 与 items 数量一致", data.get("count") == len(data.get("items", [])))
+
     status, data = request_json(
         "GET", f"/api/public/bucs/{DEFAULT_BUC}/annotations",
         headers=headers, query={"func": DEFAULT_FUNC},

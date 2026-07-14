@@ -1217,6 +1217,22 @@ def public_create_buc(
         session.close()
 
 
+@app.get("/api/public/bucs")
+def public_list_bucs(
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
+):
+    session = Session()
+    try:
+        actor = _get_actor(session, x_user_id, x_session_id)
+        _require(session, actor, "annotation_export")
+        rows = session.query(WavBuc.buc).distinct().order_by(WavBuc.buc).all()
+        items = [row.buc for row in rows]
+        return {"count": len(items), "items": items}
+    finally:
+        session.close()
+
+
 @app.get("/api/public/wav-md5/{md5}/buc")
 def public_get_buc_by_md5(
     md5: str,

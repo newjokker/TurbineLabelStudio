@@ -36,6 +36,18 @@ status, data = request_json("PUT", "/api/public/datasets/1/bucs",
     headers=headers)`,
       },
       {
+        method: "GET",
+        path: "/api/public/bucs",
+        summary: "获取全部 BUC",
+        description: "需要 annotation_export 权限。返回 wav_buc 表中全部去重后的 BUC，按 BUC 升序排列。",
+        response: { count: 2, items: ["BUC_000001", "BUC_000002"] },
+        auth: true,
+        pythonExample: `headers = login_headers()
+status, data = request_json("GET", "/api/public/bucs", headers=headers)
+for buc in data["items"]:
+    print(buc)`,
+      },
+      {
         method: "POST",
         path: "/api/public/bucs",
         summary: "插入 WAV 映射并生成 BUC",
