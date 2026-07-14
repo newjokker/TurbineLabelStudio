@@ -709,7 +709,7 @@ td code {
   align-self: start;
   min-height: 34px;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto 86px;
+  grid-template-columns: 38px minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: center;
 }
@@ -734,7 +734,8 @@ td code {
   font-size: 13px;
   text-align: right;
 }
-.gain-control {
+.gain-control,
+.playback-padding-control {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 4px;
@@ -742,7 +743,8 @@ td code {
   color: var(--muted);
   font-size: 12px;
 }
-.gain-control select {
+.gain-control select,
+.playback-padding-control select {
   min-height: 30px;
   padding: 0 6px;
 }

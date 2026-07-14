@@ -29,6 +29,15 @@
                 <option value="100">100</option>
               </select>
             </label>
+            <label class="playback-padding-control">扩展
+              <select id="playbackPaddingInput" title="在标注框前后扩展的播放秒数">
+                <option value="0" selected>0秒</option>
+                <option value="0.5">0.5秒</option>
+                <option value="1">1秒</option>
+                <option value="1.5">1.5秒</option>
+                <option value="2">2秒</option>
+              </select>
+            </label>
           </div>
           <div class="image-stage" id="imageStage">
             <div class="image-canvas" id="imageCanvas">
@@ -163,6 +172,7 @@
     const audioProgress = document.getElementById('audioProgress');
     const audioTime = document.getElementById('audioTime');
     const gainInput = document.getElementById('gainInput');
+    const playbackPaddingInput = document.getElementById('playbackPaddingInput');
     const playheadLine = document.getElementById('playheadLine');
     const editModeBtn = document.getElementById('editModeBtn');
     const deleteAnnotationBtn = document.getElementById('deleteAnnotationBtn');
@@ -1144,8 +1154,13 @@
       if (!item || !duration || !audioDuration) return null;
       const left = Math.max(0, Math.min(item.x1, item.x2));
       const right = Math.min(IMAGE_WIDTH, Math.max(item.x1, item.x2));
-      const start = left / IMAGE_WIDTH * duration;
-      const end = Math.min(right / IMAGE_WIDTH * duration, audioDuration);
+      const padding = Number(playbackPaddingInput.value || 0);
+      const start = Math.max(0, left / IMAGE_WIDTH * duration - padding);
+      const end = Math.min(
+        right / IMAGE_WIDTH * duration + padding,
+        duration,
+        audioDuration
+      );
       if (end <= start) return null;
       return { start, end };
     }
